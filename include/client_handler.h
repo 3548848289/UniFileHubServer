@@ -3,6 +3,9 @@
 
 #include <iostream>
 #include <boost/asio.hpp>
+#include <boost/algorithm/string.hpp> 
+
+
 #include <vector>
 #include <thread>
 #include <memory>
@@ -26,6 +29,7 @@ private:
     std::thread thread_;
     std::mutex& mtx_;
     MessageHandler message_handler_;
+    std::string sender_ip;
 };
 
 #endif // CLIENT_HANDLER_H

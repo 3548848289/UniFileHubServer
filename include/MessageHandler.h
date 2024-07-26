@@ -6,7 +6,9 @@
 #include <sstream>
 #include <cstdio>
 #include <vector>
+#include <string>
 #include <string.h>
+#include <sstream>
 
 class MessageHandler {
 public:
@@ -17,6 +19,8 @@ private:
     std::string handle_chick_event(char* buf);
     std::string handle_read_event(char* buf);
     std::string handle_clear_event(char* buf);
+    std::string handle_edited_event(std::string buf);
+    
 };
 
 #endif // MESSAGE_HANDLER_H
