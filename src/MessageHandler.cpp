@@ -44,9 +44,10 @@ std::string MessageHandler::handle_read_event(char* buf) {
         pclose(pipe);
     }
     return result;
+
 }
 
-std::string MessageHandler::handle_clear_event(char* buf) {
+std::string MessageHandler::handle_clear_event(char* buf    ) {
     int row, column;
     sscanf(buf, "(%d,%d)", &row, &column);
     // std::cout << "clear data: (" << row << ", " << column << ")" << std::endl;
@@ -92,12 +93,7 @@ std::string MessageHandler::handle_edited_event(std::string buf) {
     int result = std::system(command.c_str());
     
     std::stringstream ss;
-    if (result == 0) {
-        ss << "edited(" << row << "," << col << "," << text;
-        return "edited\n" + ss.str();
-    } else {
-        ss << "edited(" << row << "," << col << "," << text;
-        return "edited\n" + ss.str();
+    ss << "edited(" << row << "," << col << "," << text;
+    return "edited\n" + ss.str();
         
-    }
 }

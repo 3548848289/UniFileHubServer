@@ -52,8 +52,7 @@ void ClientHandler::broadcast_message(const std::string& message) {
                     std::cout << " messege:" << message_with_ip << std::endl;
 
                 } else {
-                    // 处理 lines 只有一行或不足两行的情况
-                    message_with_ip = lines[0] + "\n" + sender_ip;
+                    message_with_ip = lines[0] + "\n" + sender_ip;                    // 处理 lines 只有一行或不足两行的情况
                 }
             }
 
