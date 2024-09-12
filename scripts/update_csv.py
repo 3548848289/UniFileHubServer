@@ -29,7 +29,7 @@ if __name__ == "__main__":
         print("Usage: python update_csv.py <filename> <row> <col> <new_value>")
         sys.exit(1)
 
-    filename = sys.argv[1]
+    filename = "../resources" + sys.argv[1]
     row = int(sys.argv[2]) + 1
     col = int(sys.argv[3])
     new_value = sys.argv[4]

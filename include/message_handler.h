@@ -15,6 +15,8 @@ class MessageHandler {
 public:
     MessageHandler() {}
     std::vector<Json::Value> handle_message(char* buf, size_t len);
+    std::tuple<std::string, int, int, std::string> extract_common_fields(const Json::Value& root);
+
 
 private:
 

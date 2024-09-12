@@ -22,6 +22,7 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/src/server.cpp
     ${PROJECT_SOURCE_DIR}/src/client_handler.cpp
     ${PROJECT_SOURCE_DIR}/src/MessageHandler.cpp
+    ${PROJECT_SOURCE_DIR}/src/json_handler.cpp
 )
 
 # 添加可执行文件
