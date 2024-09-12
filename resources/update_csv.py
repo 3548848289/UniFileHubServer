@@ -22,7 +22,7 @@ def update_csv(filename, row, col, new_value):
         csv_writer = csv.writer(file)
         csv_writer.writerows(rows)
 
-    print(f"Updated row {row}, column {col} with new value: {new_value}")
+    # print(f"Updated row {row}, column {col} with new value: {new_value}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:

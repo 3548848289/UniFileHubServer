@@ -13,6 +13,9 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # 查找Boost库（确保已安装）
 find_package(Boost 1.66 REQUIRED COMPONENTS system)
 
+# 查找jsoncpp库
+find_package(jsoncpp REQUIRED)
+
 # 源文件列表
 set(SOURCES
     ${PROJECT_SOURCE_DIR}/src/main.cpp
@@ -24,5 +27,5 @@ set(SOURCES
 # 添加可执行文件
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# 链接Boost库
-target_link_libraries(${PROJECT_NAME} Boost::system)
+# 链接Boost库和jsoncpp库
+target_link_libraries(${PROJECT_NAME} Boost::system jsoncpp_lib)

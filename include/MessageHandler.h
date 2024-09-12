@@ -9,17 +9,21 @@
 #include <string>
 #include <string.h>
 #include <sstream>
+#include <json/json.h>
 
 class MessageHandler {
 public:
     MessageHandler() {}
-    std::vector<std::string> handle_message(char* buf, size_t len);
+    std::vector<Json::Value> handle_message(char* buf, size_t len);
 
 private:
-    std::string handle_chick_event(char* buf);
-    std::string handle_read_event(char* buf);
-    std::string handle_clear_event(char* buf);
-    std::string handle_edited_event(std::string buf);
+
+    Json::Value construct_json(const std::string& ip, const std::string& operation, 
+                               int row, int column, const std::string& object);
+    Json::Value handle_chick_event(const Json::Value& root);
+    Json::Value handle_read_event(const Json::Value& root);
+    Json::Value handle_clear_event(const Json::Value& root);
+    Json::Value handle_edited_event(const Json::Value& root);
     
 };
 

@@ -10,6 +10,8 @@
 #include <thread>
 #include <memory>
 #include <mutex>
+#include <json/json.h>
+
 #include "MessageHandler.h"
 
 using boost::asio::ip::tcp;
@@ -22,7 +24,7 @@ public:
 
 private:
     void handle_client();
-    void broadcast_message(const std::string& message);
+    void broadcast_message(const Json::Value& message);
 
     tcp::socket socket_;
     std::vector<std::shared_ptr<ClientHandler>>& clients_;
