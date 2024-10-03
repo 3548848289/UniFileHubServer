@@ -14,7 +14,7 @@ if __name__ == "__main__":
         print("Usage: python script.py <filename>")
         sys.exit(1)
 
-    filename = "../resources" + sys.argv[1]
+    filename = "../resources/" + sys.argv[1]
     records = read_csv(filename)
     for record in records:
         print(",".join(record))

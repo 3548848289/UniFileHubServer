@@ -21,7 +21,7 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/src/main.cpp
     ${PROJECT_SOURCE_DIR}/src/server.cpp
     ${PROJECT_SOURCE_DIR}/src/client_handler.cpp
-    ${PROJECT_SOURCE_DIR}/src/MessageHandler.cpp
+    ${PROJECT_SOURCE_DIR}/src/message_handler.cpp
     ${PROJECT_SOURCE_DIR}/src/json_handler.cpp
 )
 

@@ -12,7 +12,7 @@
 #include <mutex>
 #include <json/json.h>
 
-#include "MessageHandler.h"
+#include "message_handler.h"
 
 using boost::asio::ip::tcp;
 

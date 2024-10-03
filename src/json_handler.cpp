@@ -36,5 +36,5 @@ std::string JsonHandler::get_string_field(const Json::Value& root, const std::st
 }
 
 int JsonHandler::get_int_field(const Json::Value& root, const std::string& key) {
-    return root.isMember(key) ? root[key].asInt() : 0;
+    return root.isMember(key) ? root[key].asInt() : -1;
 }

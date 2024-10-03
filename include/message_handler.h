@@ -10,13 +10,14 @@
 #include <string.h>
 #include <sstream>
 #include <json/json.h>
+#include "json_handler.h"
+
 
 class MessageHandler {
 public:
     MessageHandler() {}
     std::vector<Json::Value> handle_message(char* buf, size_t len);
-    std::tuple<std::string, int, int, std::string> extract_common_fields(const Json::Value& root);
-
+    std::string execute_command(const std::string& command);
 
 private:
 

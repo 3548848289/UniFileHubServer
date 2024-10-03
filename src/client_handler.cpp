@@ -15,13 +15,15 @@ void ClientHandler::handle_client() {
             clients_.push_back(shared_from_this());
         }
         while (true) {
-            char buf[1024] = {0};
+            char buf[8192] = {0};
             size_t len = socket_.receive(boost::asio::buffer(buf, sizeof(buf)));
 
             if (len > 0) {
                 sender_ip = socket_.remote_endpoint().address().to_string();
                 std::vector<Json::Value> messages = message_handler_.handle_message(buf, len);
                 for (const auto& message : messages) {
+                    std::cout << message << std::endl;
+
                     broadcast_message(message);
                 }
             } else {
@@ -43,10 +45,8 @@ void ClientHandler::broadcast_message(const Json::Value& message) {
     std::lock_guard<std::mutex> lock(mtx_);
     for (auto it = clients_.begin(); it != clients_.end(); ) {
         try {
-            // 序列化 JSON 数据
             Json::StreamWriterBuilder writer;
             std::string message_str = Json::writeString(writer, message);
-            // 发送 JSON 消息给客户端
             boost::asio::write((*it)->socket_, boost::asio::buffer(message_str));
             ++it;
         } catch (boost::system::system_error& e) {
