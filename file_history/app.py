@@ -26,6 +26,17 @@ def unique_name(dir_path, filename):
         new_name = f"{name}_{count}{ext}"
     return new_name
 
+
+@app.route('/online/<filename>', methods=['PUT'])
+def save_file(filename):
+    file_path = os.path.join("/home/ubuntu/windows/Internet/Mytrain/mytxt2/resources", filename)
+    
+    with open(file_path, 'wb') as f:
+        f.write(request.data)
+
+    return jsonify({"message": "File uploaded successfully", "filename": filename}), 200
+
+
 # 上传文件接口
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload(filename):
