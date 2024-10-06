@@ -9,23 +9,26 @@ app = Flask(__name__)
 UPLOAD_DIR = '/home/ubuntu/windows/Internet/Mytrain/mytxt2/file_history/uploads'
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_EXT = {'db', 'txt', 'cpp', 'h', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_EXT = {'csv', 'db', 'txt', 'cpp', 'h', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 
 # 判断文件是否允许
 def is_allowed(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
 
-# 生成唯一文件名，从 xxx_1.xxx 开始
-def unique_name(dir_path, filename):
-    name, ext = os.path.splitext(filename)
-    count = 1
-    new_name = f"{name}_{count}{ext}"  # 从 xxx_1 开始
-    while os.path.exists(os.path.join(dir_path, new_name)):
-        count += 1
-        new_name = f"{name}_{count}{ext}"
-    return new_name
+def unique_name(directory, filename):
+    base, ext = os.path.splitext(filename)
 
+    # 生成初始的新文件名
+    new_filename = f"{base}1{ext}"  # 初始文件名为 FileItemWidget1.cpp
+    counter = 1  # 初始化计数器
+
+    # 检查文件是否存在，如果存在，则生成新文件名
+    while os.path.exists(os.path.join(directory, new_filename)):
+        counter += 1  # 增加计数器
+        new_filename = f"{base}{counter}{ext}"  # 更新文件名格式为 FileItemWidget2.cpp 等
+
+    return new_filename
 
 @app.route('/online/<filename>', methods=['PUT'])
 def save_file(filename):
@@ -37,7 +40,6 @@ def save_file(filename):
     return jsonify({"message": "File uploaded successfully", "filename": filename}), 200
 
 
-# 上传文件接口
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload(filename):
     if not is_allowed(filename):
@@ -46,21 +48,29 @@ def upload(filename):
     if request.content_length == 0:
         return "No file provided", 400
 
-    # 创建文件目录，点号替换为下划线
-    clean_name = filename.replace('.', '_') 
-    dir_path = os.path.join(UPLOAD_DIR, secure_filename(clean_name))
-    os.makedirs(dir_path, exist_ok=True)
+    path = request.args.get('path')
+    if not path:
+        return "File path not provided", 400
 
-    # 生成唯一文件名，从 xxx_1 开始
-    save_name = unique_name(dir_path, secure_filename(filename))
-    save_path = os.path.join(dir_path, save_name)
-    
+    user_path = os.path.join(UPLOAD_DIR, path)
+    os.makedirs(user_path, exist_ok=True)
+
+    folder_name = filename.replace('.', '_')
+    final_path = os.path.join(user_path, folder_name)
+    os.makedirs(final_path, exist_ok=True)
+    save_name = unique_name(final_path, secure_filename(filename))
+    save_path = os.path.join(final_path, save_name)
+
+    if os.path.exists(save_path):
+        return "File already exists", 409  # 409 Conflict
+
     try:
         with open(save_path, 'wb') as f:
             f.write(request.data)
         return "Upload successful", 200
     except Exception as e:
         return f"Upload failed: {str(e)}", 500
+
 
 # 下载文件接口
 @app.route('/download/<dirname>/<filename>', methods=['GET'])
