@@ -49,7 +49,8 @@ def login():
 
                 # 确保 avatar 是一个正确的字符串，不包含 b'...' 的字节类型标记
                 if avatar:
-                    avatar_url = f"/avatars/{avatar.decode('utf-8')}"  # 这里将字节类型转换为字符串
+                    avatar_url = f"/avatars/{avatar}"
+                    # avatar_url = f"/avatars/{avatar.decode('utf-8')}"  # 这里将字节类型转换为字符串
                 else:
                     avatar_url = None
 
