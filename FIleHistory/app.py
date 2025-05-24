@@ -6,26 +6,6 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXT = {'csv', 'db', 'txt', 'cpp', 'h', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
-
-
-def is_allowed(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
-
-
-def unique_name(directory, filename):
-    base, ext = os.path.splitext(filename)
-
-    # 生成初始的新文件名
-    new_filename = f"{base}1{ext}"  # 初始文件名为 FileItemWidget1.cpp
-    counter = 1  # 初始化计数器
-
-    # 检查文件是否存在，如果存在，则生成新文件名
-    while os.path.exists(os.path.join(directory, new_filename)):
-        counter += 1  # 增加计数器
-        new_filename = f"{base}{counter}{ext}"  # 更新文件名格式为 FileItemWidget2.cpp 等
-
-    return new_filename
 
 
 @app.route('/<filename>', methods=['PUT'])  # 上传文件接口
@@ -38,7 +18,6 @@ def upload_file(filename):
         return jsonify({"message": "File uploaded successfully", "file_path": file_path}), 200
     else:
         return jsonify({"message": "No file provided"}), 400
-
 
 # 下载文件接口
 @app.route('/uploads/<filename>', methods=['GET'], strict_slashes=False)
@@ -69,6 +48,7 @@ def check_file_exists(filename):
     exists = os.path.exists(file_path)
 
     print(file_path)
+    print(exists)
     return jsonify({"exists": exists}), 200
 
 

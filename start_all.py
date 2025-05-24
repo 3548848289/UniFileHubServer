@@ -9,7 +9,7 @@ services = [
 processes = []
 
 for folder, entry in services:
-    p = subprocess.Popen(["python", entry], cwd=f"./{folder}")
+    p = subprocess.Popen(["python3", entry], cwd=f"./{folder}")
     processes.append(p)
 
 # 可选：阻塞主线程直到用户退出

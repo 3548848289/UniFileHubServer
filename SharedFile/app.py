@@ -131,6 +131,10 @@ class SharedFile(db.Model):
 def generate_share_token(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
+import shutil
+from datetime import datetime
+import os
+
 @app.route('/<filename>', methods=['PUT'])
 def save_file(filename):
     share_token = request.args.get('share_token')
@@ -138,14 +142,21 @@ def save_file(filename):
         share_token = generate_share_token()
 
     filename = secure_filename(filename)
-    unique_filename = str(uuid.uuid4()) + os.path.splitext(filename)[-1]
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # 获取当前的年月日时分秒
+    unique_filename = f"{timestamp}_{filename}"  # 将时间戳与文件名组合
     full_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
 
     try:
+        # 保存文件到本地
         with open(full_path, 'wb') as f:
             f.write(request.data)
+
+        # 复制文件到目标目录，仅使用文件名
+        target_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'SharedCSV', 'resources')
+        target_path = os.path.join(target_dir, filename)  # 保持原始文件名
+        shutil.copy(full_path, target_path)  # 复制文件到目标路径
     except Exception as e:
-        return jsonify({'error': 'File save error', 'message': str(e)}), 500
+        return jsonify({'error': 'File save or copy error', 'message': str(e)}), 500
 
     try:
         shared_file = SharedFile(
@@ -160,7 +171,7 @@ def save_file(filename):
         return jsonify({'error': 'DB error', 'message': str(e)}), 500
 
     return jsonify({
-        "message": "File uploaded successfully",
+        "message": "File uploaded and copied successfully",
         "filename": filename,
         "share_token": share_token
     }), 200
