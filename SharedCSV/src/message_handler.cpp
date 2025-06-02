@@ -65,10 +65,12 @@ Json::Value MessageHandler::handle_edited_event(const Json::Value& root) {
 }
 
 Json::Value MessageHandler::handle_disconnect_event(const Json::Value& root) {
-    Json::Value msg;
-    msg["type"] = "system";
-    msg["event"] = "disconnect";
-    msg["ip"] = root["ip"];  // 来自 JsonHandler::construct_system_message
-    msg["message"] = root.get("message", "Client disconnected");
-    return msg;
+    // Json::Value msg;
+    // msg["type"] = "system";
+    // msg["event"] = "disconnect";
+    // msg["ip"] = root["ip"];  // 来自 JsonHandler::construct_system_message
+    // msg["message"] = root.get("message", "Client disconnected");
+    // return msg;
+    auto [ip, row, column, object] = JsonHandler::extract_common_fields(root);
+    return JsonHandler::construct_json(ip, "disconnect", row, column, "");
 }

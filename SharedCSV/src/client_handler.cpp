@@ -35,15 +35,6 @@ void ClientHandler::handle_client() {
         else 
             std::cerr << "handle_client 异常: " << e.what() << std::endl;
         
-        Json::Value disconnect = JsonHandler::construct_system_message(
-            sender_ip, "disconnect", "Client disconnected");
-            
-        std::string disconnect_str = Json::writeString(Json::StreamWriterBuilder(), disconnect);
-        std::vector<Json::Value> messages = message_handler_.handle_message(
-            disconnect_str.data(), disconnect_str.size());
-        
-        for (const auto& msg : messages) 
-            broadcast_message(msg);
         // 无论哪种异常都清理 client
         std::lock_guard<std::mutex> lock(mtx_);
         clients_.erase(std::remove(clients_.begin(), clients_.end(), shared_from_this()), clients_.end());

@@ -3,7 +3,8 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/SharedCSV/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/g++",
