@@ -1,3 +1,4 @@
+#pragma execution_character_set("utf-8")
 #include "client_handler.h"
 namespace fs = std::filesystem;
 
@@ -29,12 +30,12 @@ void ClientHandler::handle_client() {
         }
     } catch (const boost::system::system_error& e) {
         if (e.code() == boost::asio::error::eof) {
-            std::cout << "客户端断开连接。" << std::endl;
+            std::cout << "Client disconnected." << std::endl;
             // clear_file();
         }
-        else 
-            std::cerr << "handle_client 异常: " << e.what() << std::endl;
-        
+        else {
+            std::cerr << "handle_client exception: " << e.what() << std::endl;
+        }
         // 无论哪种异常都清理 client
         std::lock_guard<std::mutex> lock(mtx_);
         clients_.erase(std::remove(clients_.begin(), clients_.end(), shared_from_this()), clients_.end());
@@ -68,8 +69,10 @@ void ClientHandler::clear_file() {
         for (const auto& entry : fs::directory_iterator(folder)) {
             fs::remove_all(entry);  // 删除文件或目录
         }
-        std::cout << "已清空 resources 文件夹" << std::endl;
-    } catch (const std::exception& ex) {
-        std::cerr << "清空 resources 文件夹时出错: " << ex.what() << std::endl;
+        std::cout << "Resources folder cleared" << std::endl;
+    }
+    catch (const std::exception& ex) {
+        std::cerr << "Error clearing resources folder: " << ex.what() << std::endl;
+
     }
 }

@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.models import User,UserInfo,db
 from app.utils import generate_password_hash, decode_avatar, save_avatar
+from flask_jwt_extended import create_access_token
 
 user_bp = Blueprint('user', __name__, url_prefix='/user')
 
@@ -33,6 +34,7 @@ def register():
     return jsonify({"message": "User registered successfully!"}), 200
 
 
+
 @user_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -41,29 +43,29 @@ def login():
 
     try:
         user = User.query.filter_by(username=username).first()
-        print("Received data:", user)  # 调试用，查看收到的请求数据
+        print("Received data:", user)  # 调试用
 
-        if user:
-            if user.password == password:
-                avatar = user.avatar  # 假设头像存储路径在数据库中的 `avatar` 字段
+        if user and user.password == password:
+            # 生成 JWT token
+            token = create_access_token(identity=username)
 
-                # 确保 avatar 是一个正确的字符串，不包含 b'...' 的字节类型标记
-                if avatar:
-                    avatar_url = f"/avatars/{avatar}"
-                    # avatar_url = f"/avatars/{avatar.decode('utf-8')}"  # 这里将字节类型转换为字符串
-                else:
-                    avatar_url = None
+            avatar = user.avatar
+            avatar_url = f"/avatars/{avatar}" if avatar else None
 
-                return jsonify({"message": "Login successful", "username": username, "avatar_url": avatar_url}), 200
-            else:
-                return jsonify({"message": "Invalid username or password"}), 401
+            return jsonify({
+                "message": "Login successful",
+                "username": username,
+                "avatar_url": avatar_url,
+                "access_token": token   # <- 返回给 Qt 客户端
+            }), 200
+        elif user:
+            return jsonify({"message": "Invalid username or password"}), 401
         else:
-            return jsonify({"message": "User not found"}), 404  # 用户未找到
+            return jsonify({"message": "User not found"}), 404
 
     except Exception as e:
-        print("Error occurred:", e)  # 打印异常信息到服务器日志
-        return jsonify({"error": str(e)}), 500  # 返回详细错误信息
-
+        print("Error occurred:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @user_bp.route('/')

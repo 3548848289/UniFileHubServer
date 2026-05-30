@@ -1,0 +1,165 @@
+from flask import Blueprint, request, jsonify, send_file, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+import os
+from app.services.file_service import FileService
+from app.services.storage_service import StorageService
+from app.models import File
+
+bp = Blueprint('drive', __name__, url_prefix='/api/drive')
+
+
+@bp.route('/upload', methods=['POST'])
+@jwt_required()
+def upload_file():
+    username = get_jwt_identity()
+
+    parent_id = request.form.get('parent_id', 0, type=int)
+    file = request.files.get('file')
+
+    if not file:
+        return jsonify({'msg': '未提供文件'}), 422
+
+    # 获取上传的文件名
+    filename = file.filename
+
+    # 直接使用文件名，无需转码
+    current_app.logger.info(f"接收到文件: {filename}")
+
+    try:
+        save_path = StorageService.save_file(username, parent_id, file)
+        # 使用保存后的文件名（可能是处理过的新文件名）
+        saved_filename = os.path.basename(save_path)
+        FileService.create_file_record(username, parent_id, saved_filename, save_path)
+        return jsonify({'msg': '文件上传成功'}), 200
+    except Exception as e:
+        current_app.logger.error(f"上传失败: {str(e)}")
+        return jsonify({'msg': '文件上传失败', 'error': str(e)}), 500
+
+
+@bp.route('/download/<int:file_id>', methods=['GET'])
+@jwt_required()
+def download_file(file_id):
+    username = get_jwt_identity()
+    file_record = FileService.get_file(file_id, username)
+    if not file_record:
+        return jsonify({'msg': 'File not found'}), 404
+
+    return send_file(file_record.path, as_attachment=True)
+
+@bp.route('/list', methods=['GET'])
+@jwt_required()
+def list_files():
+    username = get_jwt_identity()
+    parent_id = request.args.get('parent_id', 0, type=int)
+
+    files = File.query.filter_by(username=username, parent_id=parent_id)\
+                      .order_by(File.is_dir.desc(), File.name.asc())\
+                      .all()
+
+    return jsonify([
+        {
+            "id": f.id,
+            "name": f.name,
+            "is_dir": f.is_dir,
+            "size": f.size,
+            "parent_id": f.parent_id,
+            "created_at": f.created_at.isoformat()
+        }
+        for f in files
+    ])
+
+
+@bp.route('/path', methods=['GET'])
+@jwt_required()
+def get_path():
+    username = get_jwt_identity()
+    dir_id = request.args.get('dir_id', 0, type=int)
+
+    # 从数据库获取完整路径信息
+    path = FileService.get_path(dir_id, username)
+
+    if path is None:
+        return jsonify({'msg': 'Directory not found'}), 404
+
+    return jsonify(path)
+
+
+@bp.route('/delete/<int:file_id>', methods=['DELETE'])
+@jwt_required()
+def delete_file(file_id):
+    username = get_jwt_identity()
+
+    # 获取文件记录
+    file_record = FileService.get_file(file_id, username)
+    if not file_record:
+        return jsonify({'msg': 'File not found'}), 404
+
+    # 如果是目录，可能需要递归删除子文件
+    if file_record.is_dir:
+        success, msg = FileService.delete_directory(file_record)
+        if not success:
+            return jsonify({'msg': msg}), 400
+    else:
+        try:
+            # 删除实际文件
+            if os.path.exists(file_record.path):
+                os.remove(file_record.path)
+            # 删除数据库记录
+            FileService.delete_file_record(file_record)
+        except Exception as e:
+            return jsonify({'msg': f'Deletion failed: {str(e)}'}), 500
+
+    return jsonify({'msg': 'ok'})
+
+
+@bp.route('/new_folder/<int:parent_id>/<folder_name>', methods=['POST'])
+@jwt_required()
+def new_folder(parent_id, folder_name):
+    username = get_jwt_identity()
+
+    success, msg = FileService.create_directory(
+        username=username,
+        parent_id=parent_id,
+        folder_name=folder_name
+    )
+
+    if not success:
+        return jsonify({'msg': msg}), 400
+
+    return jsonify({'msg': 'ok'})
+
+@bp.route('/rename', methods=['POST'])
+@jwt_required()
+def rename_item():
+    username = get_jwt_identity()
+    data = request.get_json()
+    
+    # 获取请求参数
+    item_id = data.get('item_id')
+    new_name = data.get('new_name')
+    
+    # 验证参数
+    if not item_id or not new_name:
+        return jsonify({'msg': 'Missing required parameters'}), 400
+    
+    try:
+        # 调用文件服务进行重命名
+        success, result = FileService.rename_item(item_id, username, new_name)
+        
+        if not success:
+            return jsonify({'msg': result}), 400
+        
+        # 返回更新后的文件信息
+        return jsonify({
+            "id": result.id,
+            "name": result.name,
+            "is_dir": result.is_dir,
+            "size": result.size,
+            "parent_id": result.parent_id,
+            "created_at": result.created_at.isoformat()
+        }), 200
+    except Exception as ex:
+        current_app.logger.error(f"Rename failed: {str(e)}")
+        return jsonify({'msg': 'Rename failed', 'error': str(e)}), 500
+
+

@@ -10,9 +10,9 @@ import os
 info_bp = Blueprint('info', __name__, url_prefix='/info')
 
 
-@info_bp.route('/', methods=['POST'])
+@info_bp.route('/ping', methods=['Get'])
 def test1():
-    return 'test1'
+    return 'pong'
 
 
 # 获取用户信息

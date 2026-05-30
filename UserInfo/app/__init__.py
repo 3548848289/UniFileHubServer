@@ -2,9 +2,11 @@ import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_jwt_extended import JWTManager
 
 db = SQLAlchemy()
 migrate = Migrate()
+jwt = JWTManager()
 
 
 def create_app():
@@ -15,6 +17,7 @@ def create_app():
     # 初始化扩展
     db.init_app(app)
     migrate.init_app(app, db)
+    JWTManager(app)
 
     # 注册蓝图
     from app.routes import user_bp, avatar_bp, submission_bp, info_bp

@@ -1,4 +1,8 @@
 #include "message_handler.h"
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
 
 std::string MessageHandler::execute_command(const std::string& command) {
     FILE* pipe = popen(command.c_str(), "r");
@@ -43,7 +47,8 @@ std::vector<Json::Value> MessageHandler::handle_message(const char* buf, size_t 
 
 Json::Value MessageHandler::handle_read_event(const Json::Value& root) {
     auto [ip, row, column, filename] = JsonHandler::extract_common_fields(root);
-    std::string result = execute_command("python3 scripts/read_csv.py " + filename);
+    std::cout << "filename" << filename << std::endl;
+    std::string result = execute_command("python.exe ../../scripts/read_csv.py " + filename);
     return JsonHandler::construct_json(ip, "read", row, column, result);
 }
 
@@ -59,7 +64,7 @@ Json::Value MessageHandler::handle_clear_event(const Json::Value& root) {
 
 Json::Value MessageHandler::handle_edited_event(const Json::Value& root) {
     auto [ip, row, column, text] = JsonHandler::extract_common_fields(root);
-    execute_command("python3 scripts/update_csv.py class1.csv " + 
+    execute_command("python.exe scripts/update_csv.py class1.csv " + 
                     std::to_string(row) + " " + std::to_string(column) + " " + text);
     return JsonHandler::construct_json(ip, "edited", row, column, text);
 }

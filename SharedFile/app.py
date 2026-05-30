@@ -107,7 +107,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///smartdesk.db'  # 可换成 MySQL
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:Mysql20039248@localhost:3306/SmartDesk?charset=utf8mb4'
+app.config['SQLALCHEMY_DATABASE_URI'] = "mysql+pymysql://root:Mysql20039248@127.0.0.1:3306/SmartDesk?charset=utf8mb4"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
