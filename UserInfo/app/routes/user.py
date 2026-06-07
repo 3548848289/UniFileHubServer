@@ -1,7 +1,12 @@
 from flask import Blueprint, jsonify, request
 from app.models import User,UserInfo,db
 from app.utils import generate_password_hash, decode_avatar, save_avatar
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import (
+    create_access_token,
+    create_refresh_token,
+    get_jwt_identity,
+    jwt_required,
+)
 
 user_bp = Blueprint('user', __name__, url_prefix='/user')
 
@@ -48,6 +53,7 @@ def login():
         if user and user.password == password:
             # 生成 JWT token
             token = create_access_token(identity=username)
+            refresh_token = create_refresh_token(identity=username)
 
             avatar = user.avatar
             avatar_url = f"/avatars/{avatar}" if avatar else None
@@ -56,7 +62,8 @@ def login():
                 "message": "Login successful",
                 "username": username,
                 "avatar_url": avatar_url,
-                "access_token": token   # <- 返回给 Qt 客户端
+                "access_token": token,   # <- 返回给 Qt 客户端
+                "refresh_token": refresh_token
             }), 200
         elif user:
             return jsonify({"message": "Invalid username or password"}), 401
@@ -71,3 +78,37 @@ def login():
 @user_bp.route('/')
 def hello():
     return "Hello, Flask!"
+
+
+@user_bp.route('/me', methods=['GET'])
+@jwt_required()
+def me():
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    avatar = user.avatar
+    avatar_url = f"/avatars/{avatar}" if avatar else None
+
+    return jsonify({
+        "message": "Session valid",
+        "username": username,
+        "avatar_url": avatar_url,
+    }), 200
+
+
+@user_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    token = create_access_token(identity=username)
+    return jsonify({
+        "message": "Token refreshed",
+        "access_token": token,
+        "username": username,
+    }), 200
