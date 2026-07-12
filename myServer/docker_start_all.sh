@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -98,9 +98,30 @@ PY
   )
 }
 
+init_clipboardsync_db() {
+  (
+    cd "$ROOT_DIR/ClipboardSync"
+    python3 - <<'PY'
+from app import create_app, db
+
+app = create_app()
+with app.app_context():
+    db.create_all()
+PY
+  )
+}
+
 echo "Initializing application tables..."
 init_userinfo_db
 init_personaldrive_db
+init_clipboardsync_db
+
+echo "Checking nginx config..."
+nginx -t
+
+echo "Starting Nginx..."
+nginx
+NGINX_PID=$(pidof nginx | awk '{print $1}')
 
 start_service() {
   local name="$1"
@@ -115,11 +136,12 @@ start_service() {
   PIDS+=($!)
 }
 
-PIDS=("$MYSQL_PID")
+PIDS=("$MYSQL_PID" "$NGINX_PID")
 start_service "SharedFile" "SharedFile" "app.py"
 start_service "UserInfo" "UserInfo" "app.py"
 start_service "FIleHistory" "FIleHistory" "app.py"
 start_service "PersonalDrive" "PersonalDrive" "run.py"
+start_service "ClipboardSync" "ClipboardSync" "app.py"
 
 trap 'kill "${PIDS[@]}" 2>/dev/null || true' TERM INT
 

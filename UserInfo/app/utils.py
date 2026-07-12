@@ -22,8 +22,12 @@ def save_avatar(username, avatar_base64):
 
     # 使用 PIL 处理图片
     image = Image.open(BytesIO(avatar_data))
-    project_root = os.getcwd()
-    avatars_folder = os.path.join(project_root, 'avatars')
+    # 当前脚本所在文件夹 UserInfo
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 上跳一层到项目总根
+    project_root = os.path.abspath(os.path.join(current_dir, ".."))
+    avatars_folder = os.path.join(project_root, "avatars")
+
     os.makedirs(avatars_folder, exist_ok=True)
 
     # 定义文件名和完整路径

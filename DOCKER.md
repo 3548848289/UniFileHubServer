@@ -1,4 +1,4 @@
-# Docker
+﻿# Docker
 
 This project now uses one root-level Docker image that starts:
 
@@ -7,6 +7,7 @@ This project now uses one root-level Docker image that starts:
 - `UserInfo` on `5001`
 - `FIleHistory` on `5002`
 - `PersonalDrive` on `5005`
+- `ClipboardSync` on `5006`
 
 ## Build
 
@@ -20,7 +21,7 @@ docker build -t unifileserver/all-in-one .
 
 ```powershell
 docker run -d --name unifileserver-all ^
-  -p 3306:3306 -p 5000:5000 -p 5001:5001 -p 5002:5002 -p 5005:5005 ^
+  -p 3306:3306 -p 5000:5000 -p 5001:5001 -p 5002:5002 -p 5005:5005 -p 5006:5006 ^
   -v unifileserver-mysql:/var/lib/mysql ^
   -e MYSQL_ROOT_PASSWORD=Mysql20039248 ^
   -e MYSQL_DATABASE=SmartDesk ^

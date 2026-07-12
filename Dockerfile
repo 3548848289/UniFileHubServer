@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+﻿FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+	nginx \
         bash \
         ca-certificates \
         mariadb-client \
@@ -28,12 +29,16 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip \
 
 COPY . /app
 
+RUN mkdir -p /var/www/unifilehub \
+    && cp -r /app/web/* /var/www/unifilehub/ \
+    && cp /app/nginx/unifilehub.conf /etc/nginx/conf.d/default.conf
+
 RUN chmod +x /app/myServer/docker_start_all.sh \
     && mkdir -p /run/mysqld /var/lib/mysql \
     && chown -R mysql:mysql /run/mysqld /var/lib/mysql
 
 VOLUME ["/var/lib/mysql"]
 
-EXPOSE 3306 5000 5001 5002 5005
+EXPOSE 80 3306 5000 5001 5002 5005 5006
 
 CMD ["/bin/bash", "/app/myServer/docker_start_all.sh"]

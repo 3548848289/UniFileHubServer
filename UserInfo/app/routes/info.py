@@ -37,11 +37,12 @@ def get_user_info():
     if isinstance(avator_filename, bytes):  # 如果是字节类型，解码为字符串
         avator_filename = avator_filename.decode('utf-8')
 
-    # 项目路径下的 avatars 文件夹
-    avatar_folder = os.path.join(os.getcwd(), 'avatars')
 
-    # 读取图片文件并转换为 Base64
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    avatar_folder = os.path.abspath(os.path.join(current_dir, "../..", "avatars"))
     avatar_path = os.path.join(avatar_folder, avator_filename)
+    print(f"Avatar folder path: {avatar_folder}")
+
     with open(avatar_path, 'rb') as img_file:
         avator_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -37,5 +37,6 @@ stop_service "SharedFile"
 stop_service "UserInfo"
 stop_service "FIleHistory"
 stop_service "PersonalDrive"
+stop_service "ClipboardSync"
 
 echo "All managed Python services have been stopped."

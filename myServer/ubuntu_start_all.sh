@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -61,6 +61,7 @@ start_service "SharedFile" "SharedFile" "app.py"
 start_service "UserInfo" "UserInfo" "app.py"
 start_service "FIleHistory" "FIleHistory" "app.py"
 start_service "PersonalDrive" "PersonalDrive" "run.py"
+start_service "ClipboardSync" "ClipboardSync" "app.py"
 
 echo
 echo "All Python services are running."
