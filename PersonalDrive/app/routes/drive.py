@@ -1,11 +1,41 @@
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, Response, current_app, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
+import mimetypes
 import os
+import time
+from urllib.parse import quote
 from app.services.file_service import FileService
 from app.services.storage_service import StorageService
 from app.models import File
 
 bp = Blueprint('drive', __name__, url_prefix='/api/drive')
+
+
+def iter_limited_file(file_path, bytes_per_second, chunk_size=64 * 1024):
+    sent_bytes = 0
+    started_at = time.monotonic()
+
+    with open(file_path, 'rb') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            if not chunk:
+                break
+
+            sent_bytes += len(chunk)
+            yield chunk
+
+            if bytes_per_second > 0:
+                expected_elapsed = sent_bytes / bytes_per_second
+                actual_elapsed = time.monotonic() - started_at
+                delay = expected_elapsed - actual_elapsed
+                if delay > 0:
+                    time.sleep(delay)
+
+
+def content_disposition_for_download(filename):
+    fallback = filename.encode('ascii', 'ignore').decode('ascii') or 'download'
+    fallback = fallback.replace('\\', '_').replace('/', '_').replace('"', "'")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}'
 
 
 @bp.route('/upload', methods=['POST'])
@@ -31,9 +61,57 @@ def upload_file():
         saved_filename = os.path.basename(save_path)
         FileService.create_file_record(username, parent_id, saved_filename, save_path)
         return jsonify({'msg': '文件上传成功'}), 200
+    except ValueError as e:
+        current_app.logger.warning(f"Invalid upload request: {str(e)}")
+        return jsonify({'msg': str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"上传失败: {str(e)}")
         return jsonify({'msg': '文件上传失败', 'error': str(e)}), 500
+
+
+@bp.route('/batch_upload', methods=['POST'])
+@jwt_required()
+def batch_upload_files():
+    username = get_jwt_identity()
+    parent_id = request.form.get('parent_id', 0, type=int)
+    files = request.files.getlist('files') or request.files.getlist('file')
+
+    files = [file for file in files if file and file.filename]
+    if not files:
+        return jsonify({'msg': '未提供文件'}), 422
+
+    uploaded = []
+    failed = []
+
+    for file in files:
+        original_name = file.filename
+        try:
+            save_path = StorageService.save_file(username, parent_id, file)
+            saved_filename = os.path.basename(save_path)
+            record = FileService.create_file_record(username, parent_id, saved_filename, save_path)
+            uploaded.append({
+                'id': record.id,
+                'name': record.name,
+                'size': record.size,
+                'parent_id': record.parent_id,
+                'created_at': record.created_at.isoformat(),
+                'original_name': original_name,
+            })
+        except Exception as e:
+            current_app.logger.warning(f"批量上传文件失败: {original_name}: {str(e)}")
+            failed.append({
+                'name': original_name,
+                'error': str(e),
+            })
+
+    status_code = 200 if not failed else 207
+    return jsonify({
+        'msg': '批量上传完成' if not failed else '批量上传部分失败',
+        'success_count': len(uploaded),
+        'failed_count': len(failed),
+        'files': uploaded,
+        'failed': failed,
+    }), status_code
 
 
 @bp.route('/download/<int:file_id>', methods=['GET'])
@@ -44,7 +122,24 @@ def download_file(file_id):
     if not file_record:
         return jsonify({'msg': 'File not found'}), 404
 
-    return send_file(file_record.path, as_attachment=True)
+    if not file_record.path or not os.path.isfile(file_record.path):
+        return jsonify({'msg': 'File not found'}), 404
+
+    rate_limit = current_app.config.get('DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND', 10 * 1024 * 1024)
+    filename = file_record.name or os.path.basename(file_record.path)
+    mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+
+    headers = {
+        'Content-Disposition': content_disposition_for_download(filename),
+        'Content-Length': str(os.path.getsize(file_record.path)),
+    }
+
+    return Response(
+        stream_with_context(iter_limited_file(file_record.path, rate_limit)),
+        mimetype=mimetype,
+        headers=headers,
+        direct_passthrough=True,
+    )
 
 @bp.route('/list', methods=['GET'])
 @jwt_required()
@@ -82,6 +177,18 @@ def get_path():
         return jsonify({'msg': 'Directory not found'}), 404
 
     return jsonify(path)
+
+
+@bp.route('/clear', methods=['DELETE'])
+@jwt_required()
+def clear_drive():
+    username = get_jwt_identity()
+
+    success, result = FileService.clear_user_drive(username)
+    if not success:
+        return jsonify({'msg': result}), 500
+
+    return jsonify({'msg': 'ok', 'deleted_count': result})
 
 
 @bp.route('/delete/<int:file_id>', methods=['DELETE'])

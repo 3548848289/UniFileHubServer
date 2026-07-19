@@ -13,3 +13,6 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     STORAGE_ROOT = os.getenv("STORAGE_ROOT", os.path.abspath("app/storage"))
+    DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND = int(
+        os.getenv("DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND", 100 * 1024 * 1024)
+    )

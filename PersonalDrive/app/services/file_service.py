@@ -1,6 +1,8 @@
 from app.models.file import File
 from app.extensions import db
+from flask import current_app
 import os
+import shutil
 from app.services.storage_service import StorageService
 
 class FileService:
@@ -112,10 +114,38 @@ class FileService:
             return False, str(e)
 
     @staticmethod
+    def clear_user_drive(username):
+        try:
+            storage_root = os.path.abspath(current_app.config['STORAGE_ROOT'])
+            user_root = os.path.abspath(os.path.join(storage_root, username))
+
+            if os.path.commonpath([storage_root, user_root]) != storage_root or user_root == storage_root:
+                return False, "Invalid storage path"
+
+            os.makedirs(user_root, exist_ok=True)
+
+            for entry_name in os.listdir(user_root):
+                entry_path = os.path.join(user_root, entry_name)
+                if os.path.isdir(entry_path):
+                    shutil.rmtree(entry_path)
+                else:
+                    os.remove(entry_path)
+
+            deleted_count = File.query.filter_by(username=username).count()
+            File.query.filter_by(username=username).delete(synchronize_session=False)
+            db.session.commit()
+
+            return True, deleted_count
+        except Exception as e:
+            db.session.rollback()
+            return False, str(e)
+
+    @staticmethod
     def create_directory(username, parent_id, folder_name):
         try:
             base_path = StorageService.get_parent_path(username, parent_id)
-            folder_path = os.path.join(base_path, folder_name)
+            folder_name = StorageService.sanitize_name(folder_name)
+            folder_path = StorageService.ensure_child_path(base_path, os.path.join(base_path, folder_name))
 
             os.makedirs(folder_path, exist_ok=True)
 
@@ -139,6 +169,7 @@ class FileService:
     @staticmethod
     def rename_item(file_id, username, new_name):
         try:
+            new_name = StorageService.sanitize_name(new_name)
             # 获取文件/目录记录
             file_record = FileService.get_file(file_id, username)
             if not file_record:
@@ -148,7 +179,7 @@ class FileService:
             parent_path = StorageService.get_parent_path(username, file_record.parent_id)
             
             # 构建新的文件/目录路径
-            new_path = os.path.join(parent_path, new_name)
+            new_path = StorageService.ensure_child_path(parent_path, os.path.join(parent_path, new_name))
             
             # 重命名物理文件/目录
             if os.path.exists(file_record.path):

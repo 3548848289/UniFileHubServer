@@ -10,7 +10,7 @@ if %errorLevel% neq 0 (
 
 setlocal
 
-set "ROOT_DIR=D:\Python_list\Pypro_flask\UniFileServerServer"
+set "ROOT_DIR=E:\UniFileHub\UniFileHub-Server"
 
 echo Starting MySQL...
 net start mysql8
