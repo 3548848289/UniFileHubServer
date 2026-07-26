@@ -23,7 +23,7 @@ UserInfo/avatars/
 PersonalDrive/app/storage/
 
 SharedCSV/build/
-
+.agents
 *.sqlite3
 *.db
 *.tar
