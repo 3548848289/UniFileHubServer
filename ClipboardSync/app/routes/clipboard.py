@@ -3,7 +3,7 @@ import json
 import queue
 import threading
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app import db
@@ -108,8 +108,20 @@ def create_item():
     data = request.get_json(silent=True) or {}
     content = data.get('content') or ''
 
+    if not isinstance(content, str):
+        return jsonify({'message': 'content must be text'}), 400
+
     if not content.strip():
         return jsonify({'message': 'content is required'}), 400
+
+    content_bytes = len(content.encode('utf-8'))
+    max_content_bytes = current_app.config['CLIPBOARD_MAX_CONTENT_BYTES']
+    if content_bytes > max_content_bytes:
+        return jsonify({
+            'message': 'content is too large',
+            'max_bytes': max_content_bytes,
+            'actual_bytes': content_bytes,
+        }), 413
 
     content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
 

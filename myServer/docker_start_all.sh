@@ -103,10 +103,12 @@ init_clipboardsync_db() {
     cd "$ROOT_DIR/ClipboardSync"
     python3 - <<'PY'
 from app import create_app, db
+from app.schema import ensure_clipboard_schema
 
 app = create_app()
 with app.app_context():
     db.create_all()
+    ensure_clipboard_schema()
 PY
   )
 }
