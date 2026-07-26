@@ -1,22 +1,17 @@
-﻿@echo off
+@echo off
 setlocal
 
 set "ROOT_DIR=%~dp0.."
 
-echo Starting Python services from %ROOT_DIR%
+echo Starting UniFileHub Python services from %ROOT_DIR%
+echo.
 
-start "UserInfo" cmd /k "cd /d ""%ROOT_DIR%\UserInfo"" && python app.py"
-start "SharedFile" cmd /k "cd /d ""%ROOT_DIR%\SharedFile"" && python app.py"
-start "FIleHistory" cmd /k "cd /d ""%ROOT_DIR%\FIleHistory"" && python app.py"
-start "PersonalDrive" cmd /k "cd /d ""%ROOT_DIR%\PersonalDrive"" && python run.py"
-start "ClipboardSync" cmd /k "cd /d ""%ROOT_DIR%\ClipboardSync"" && python app.py"
-
-if exist "%ROOT_DIR%\SharedCSV\build\Release\BoostAsioServer.exe" (
-    start "BoostAsioServer" cmd /k "cd /d ""%ROOT_DIR%\SharedCSV\build\Release"" && BoostAsioServer.exe"
-) else (
-    echo SharedCSV executable not found, skipping BoostAsioServer.
-)
+start "UniFileHub-UserInfo" cmd /k "title UniFileHub-UserInfo && cd /d ""%ROOT_DIR%\UserInfo"" && python app.py"
+start "UniFileHub-SharedFile" cmd /k "title UniFileHub-SharedFile && cd /d ""%ROOT_DIR%\SharedFile"" && python app.py"
+start "UniFileHub-FIleHistory" cmd /k "title UniFileHub-FIleHistory && cd /d ""%ROOT_DIR%\FIleHistory"" && python app.py"
+start "UniFileHub-PersonalDrive" cmd /k "title UniFileHub-PersonalDrive && cd /d ""%ROOT_DIR%\PersonalDrive"" && python run.py"
+start "UniFileHub-ClipboardSync" cmd /k "title UniFileHub-ClipboardSync && cd /d ""%ROOT_DIR%\ClipboardSync"" && python app.py"
 
 echo.
-echo All available services have been started.
-pause
+echo Python services have been started in terminal windows.
+

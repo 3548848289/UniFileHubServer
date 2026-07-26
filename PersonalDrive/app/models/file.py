@@ -1,5 +1,9 @@
 from app.extensions import db
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class File(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -9,5 +13,5 @@ class File(db.Model):
     path = db.Column(db.String(512))
     size = db.Column(db.BigInteger)
     is_dir = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)

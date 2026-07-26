@@ -60,13 +60,13 @@ class StorageService:
         return child_abs
 
     @staticmethod
-    def save_file(username, parent_id, file):
+    def save_file(username, parent_id, file, target_name=None, auto_rename=True):
         # 获取父目录路径
         parent_path = StorageService.get_parent_path(username, parent_id)
         os.makedirs(parent_path, exist_ok=True)
 
         # 获取文件名和扩展名
-        filename = StorageService.sanitize_name(file.filename)
+        filename = StorageService.sanitize_name(target_name or file.filename)
         basename, ext = os.path.splitext(filename)
 
         # 检查文件是否已存在，并生成新的文件名（类似于Windows (1), (2)的方式）
@@ -74,7 +74,7 @@ class StorageService:
         file_path = StorageService.ensure_child_path(parent_path, os.path.join(parent_path, new_filename))
 
         counter = 1
-        while os.path.exists(file_path):
+        while auto_rename and os.path.exists(file_path):
             # 如果文件已存在，给文件名加上 (counter) 后缀
             new_filename = f"{basename} ({counter}){ext}"
             file_path = StorageService.ensure_child_path(parent_path, os.path.join(parent_path, new_filename))

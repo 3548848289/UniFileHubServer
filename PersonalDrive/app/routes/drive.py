@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, Response, current_app, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import timezone
 import mimetypes
 import os
 import time
@@ -38,6 +39,43 @@ def content_disposition_for_download(filename):
     return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}'
 
 
+def utc_isoformat(value):
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+
+    return value.isoformat()
+
+
+@bp.route('/check_name', methods=['GET'])
+@jwt_required()
+def check_name():
+    username = get_jwt_identity()
+    parent_id = request.args.get('parent_id', 0, type=int)
+    name = request.args.get('name') or ''
+
+    try:
+        safe_name = StorageService.sanitize_name(name)
+    except ValueError as e:
+        return jsonify({'msg': str(e)}), 400
+
+    existing = File.query.filter_by(username=username, parent_id=parent_id, name=safe_name).first()
+    return jsonify({
+        'exists': existing is not None,
+        'item': {
+            'id': existing.id,
+            'name': existing.name,
+            'is_dir': existing.is_dir,
+            'size': existing.size,
+            'created_at': utc_isoformat(existing.created_at),
+        } if existing else None,
+    }), 200
+
+
 @bp.route('/upload', methods=['POST'])
 @jwt_required()
 def upload_file():
@@ -50,17 +88,42 @@ def upload_file():
         return jsonify({'msg': '未提供文件'}), 422
 
     # 获取上传的文件名
-    filename = file.filename
+    target_name = request.form.get('target_name') or file.filename
+    overwrite = (request.form.get('overwrite') or '').lower() in {'1', 'true', 'yes', 'on'}
+    filename = target_name
 
     # 直接使用文件名，无需转码
     current_app.logger.info(f"接收到文件: {filename}")
 
     try:
-        save_path = StorageService.save_file(username, parent_id, file)
+        safe_target_name = StorageService.sanitize_name(target_name)
+        conflict = File.query.filter_by(username=username, parent_id=parent_id, name=safe_target_name).first()
+        if overwrite and conflict:
+            if conflict.is_dir:
+                return jsonify({'msg': 'Cannot overwrite a folder with a file'}), 400
+            if conflict.path and os.path.exists(conflict.path):
+                os.remove(conflict.path)
+            FileService.delete_file_record(conflict)
+
+        save_path = StorageService.save_file(
+            username,
+            parent_id,
+            file,
+            target_name=safe_target_name,
+            auto_rename=not overwrite
+        )
         # 使用保存后的文件名（可能是处理过的新文件名）
         saved_filename = os.path.basename(save_path)
-        FileService.create_file_record(username, parent_id, saved_filename, save_path)
-        return jsonify({'msg': '文件上传成功'}), 200
+        record = FileService.create_file_record(username, parent_id, saved_filename, save_path)
+        return jsonify({
+            'msg': '文件上传成功',
+            'id': record.id,
+            'name': record.name,
+            'is_dir': record.is_dir,
+            'size': record.size,
+            'parent_id': record.parent_id,
+            'created_at': utc_isoformat(record.created_at)
+        }), 200
     except ValueError as e:
         current_app.logger.warning(f"Invalid upload request: {str(e)}")
         return jsonify({'msg': str(e)}), 400
@@ -94,7 +157,7 @@ def batch_upload_files():
                 'name': record.name,
                 'size': record.size,
                 'parent_id': record.parent_id,
-                'created_at': record.created_at.isoformat(),
+                'created_at': utc_isoformat(record.created_at),
                 'original_name': original_name,
             })
         except Exception as e:
@@ -158,7 +221,7 @@ def list_files():
             "is_dir": f.is_dir,
             "size": f.size,
             "parent_id": f.parent_id,
-            "created_at": f.created_at.isoformat()
+            "created_at": utc_isoformat(f.created_at)
         }
         for f in files
     ])
@@ -263,7 +326,7 @@ def rename_item():
             "is_dir": result.is_dir,
             "size": result.size,
             "parent_id": result.parent_id,
-            "created_at": result.created_at.isoformat()
+            "created_at": utc_isoformat(result.created_at)
         }), 200
     except Exception as ex:
         current_app.logger.error(f"Rename failed: {str(e)}")
