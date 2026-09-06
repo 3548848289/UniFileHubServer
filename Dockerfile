@@ -39,6 +39,6 @@ RUN chmod +x /app/myServer/docker_start_all.sh \
 
 VOLUME ["/var/lib/mysql"]
 
-EXPOSE 80 3306 5000 5001 5002 5005 5006
+EXPOSE 80 3306 5000 5001 5002 5005 5006 15000/udp
 
 CMD ["/bin/bash", "/app/myServer/docker_start_all.sh"]

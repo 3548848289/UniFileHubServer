@@ -79,6 +79,22 @@ def list_items():
     }), 200
 
 
+@clipboard_bp.route('/clipboard/items', methods=['DELETE'])
+@jwt_required()
+def clear_items():
+    username = get_jwt_identity()
+    deleted_count = (CloudClipboardItem.query
+                     .filter_by(username=username)
+                     .delete(synchronize_session=False))
+    db.session.commit()
+    _broadcast_clipboard_changed(username, 'cleared')
+
+    return jsonify({
+        'message': 'cleared',
+        'deleted_count': deleted_count,
+    }), 200
+
+
 @clipboard_bp.route('/clipboard/events', methods=['GET'])
 @jwt_required()
 def clipboard_events():

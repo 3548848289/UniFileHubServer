@@ -144,6 +144,7 @@ start_service "UserInfo" "UserInfo" "app.py"
 start_service "FIleHistory" "FIleHistory" "app.py"
 start_service "PersonalDrive" "PersonalDrive" "run.py"
 start_service "ClipboardSync" "ClipboardSync" "app.py"
+start_service "Discovery" "Discovery" "app.py"
 
 trap 'kill "${PIDS[@]}" 2>/dev/null || true' TERM INT
 

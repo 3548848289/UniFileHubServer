@@ -8,12 +8,14 @@ $ErrorActionPreference = "Continue"
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $MysqlService = if ($env:UNIFILEHUB_MYSQL_SERVICE) { $env:UNIFILEHUB_MYSQL_SERVICE } else { "mysql8" }
 $Ports = @(5000, 5001, 5002, 5005, 5006)
+$UdpPorts = @(15000)
 $ServiceScripts = @(
     Join-Path $RootDir "UserInfo\app.py"
     Join-Path $RootDir "SharedFile\app.py"
     Join-Path $RootDir "FIleHistory\app.py"
     Join-Path $RootDir "PersonalDrive\run.py"
     Join-Path $RootDir "ClipboardSync\app.py"
+    Join-Path $RootDir "Discovery\app.py"
 )
 
 function Write-Status($Message) {
@@ -93,6 +95,17 @@ for ($round = 1; $round -le 5; $round++) {
             Stop-PortOwner $port
         } catch {
             Write-Status ("Unable to inspect port {0}: {1}" -f $port, $_.Exception.Message)
+        }
+    }
+
+    foreach ($port in $UdpPorts) {
+        try {
+            $udpConnections = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue
+            foreach ($udpConnection in $udpConnections) {
+                Stop-Pid $udpConnection.OwningProcess ("listening on UDP port {0}" -f $port)
+            }
+        } catch {
+            Write-Status ("Unable to inspect UDP port {0}: {1}" -f $port, $_.Exception.Message)
         }
     }
 

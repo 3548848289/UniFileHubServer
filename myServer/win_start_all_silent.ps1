@@ -8,11 +8,12 @@ $MysqlPort = 3306
 $ClientExe = if ($env:UNIFILEHUB_CLIENT_EXE) { $env:UNIFILEHUB_CLIENT_EXE } else { "E:\APP\UniFileHub\UniFileHub.exe" }
 
 $Services = @(
-    @{ Name = "SharedFile";    Dir = "SharedFile";    Script = "app.py"; Port = 5000 }
-    @{ Name = "UserInfo";      Dir = "UserInfo";      Script = "app.py"; Port = 5001 }
-    @{ Name = "FIleHistory";   Dir = "FIleHistory";   Script = "app.py"; Port = 5002 }
-    @{ Name = "PersonalDrive"; Dir = "PersonalDrive"; Script = "run.py"; Port = 5005 }
-    @{ Name = "ClipboardSync"; Dir = "ClipboardSync"; Script = "app.py"; Port = 5006 }
+    @{ Name = "SharedFile";    Dir = "SharedFile";    Script = "app.py"; Port = 5000;  Protocol = "TCP" }
+    @{ Name = "UserInfo";      Dir = "UserInfo";      Script = "app.py"; Port = 5001;  Protocol = "TCP" }
+    @{ Name = "FIleHistory";   Dir = "FIleHistory";   Script = "app.py"; Port = 5002;  Protocol = "TCP" }
+    @{ Name = "PersonalDrive"; Dir = "PersonalDrive"; Script = "run.py"; Port = 5005;  Protocol = "TCP" }
+    @{ Name = "ClipboardSync"; Dir = "ClipboardSync"; Script = "app.py"; Port = 5006;  Protocol = "TCP" }
+    @{ Name = "Discovery";     Dir = "Discovery";     Script = "app.py"; Port = 15000; Protocol = "UDP" }
 )
 
 function Wait-TcpPort($HostName, $Port, $TimeoutSeconds) {
@@ -28,6 +29,21 @@ function Wait-TcpPort($HostName, $Port, $TimeoutSeconds) {
         } catch {
         } finally {
             $client.Close()
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    return $false
+}
+
+function Wait-UdpPort($Port, $TimeoutSeconds) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $endpoint = Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($endpoint) {
+            return $true
         }
 
         Start-Sleep -Seconds 1
@@ -80,7 +96,9 @@ function Start-PythonService($Service) {
     $stdout = Join-Path $LogDir ($Service.Name + ".out.log")
     $stderr = Join-Path $LogDir ($Service.Name + ".err.log")
 
-    Write-Host ("Starting {0} on port {1}..." -f $Service.Name, $Service.Port)
+    $protocol = if ($Service.Protocol) { $Service.Protocol } else { "TCP" }
+
+    Write-Host ("Starting {0} on {1} port {2}..." -f $Service.Name, $protocol, $Service.Port)
     $process = Start-Process `
         -FilePath $python.Source `
         -ArgumentList @($scriptPath) `
@@ -90,10 +108,16 @@ function Start-PythonService($Service) {
         -RedirectStandardError $stderr `
         -PassThru
 
-    if (-not (Wait-TcpPort "127.0.0.1" $Service.Port 25)) {
-        Write-Host ("Warning: {0} did not open port {1} within 25 seconds. Check {2} and {3}." -f $Service.Name, $Service.Port, $stdout, $stderr)
+    $isListening = if ($protocol -eq "UDP") {
+        Wait-UdpPort $Service.Port 25
     } else {
-        Write-Host ("{0} is listening on port {1}. PID: {2}" -f $Service.Name, $Service.Port, $process.Id)
+        Wait-TcpPort "127.0.0.1" $Service.Port 25
+    }
+
+    if (-not $isListening) {
+        Write-Host ("Warning: {0} did not open {1} port {2} within 25 seconds. Check {3} and {4}." -f $Service.Name, $protocol, $Service.Port, $stdout, $stderr)
+    } else {
+        Write-Host ("{0} is listening on {1} port {2}. PID: {3}" -f $Service.Name, $protocol, $Service.Port, $process.Id)
     }
 }
 
