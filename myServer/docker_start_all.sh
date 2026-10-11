@@ -16,6 +16,7 @@ export SECRET_KEY="${SECRET_KEY:-dev-secret}"
 export JWT_SECRET_KEY="${JWT_SECRET_KEY:-jwt-secret-key}"
 export SHAREDCSV_RESOURCE_DIR="${SHAREDCSV_RESOURCE_DIR:-$ROOT_DIR/SharedCSV/resources}"
 export STORAGE_ROOT="${STORAGE_ROOT:-$ROOT_DIR/PersonalDrive/app/storage}"
+export CLIPBOARD_IMAGE_STORE_ROOT="${CLIPBOARD_IMAGE_STORE_ROOT:-$ROOT_DIR/ClipboardSync/image_store}"
 
 mkdir -p \
   "$ROOT_DIR/myServer/logs" \
@@ -24,6 +25,7 @@ mkdir -p \
   "$ROOT_DIR/UserInfo/avatars" \
   "$ROOT_DIR/FIleHistory/uploads" \
   "$ROOT_DIR/PersonalDrive/app/storage" \
+  "$CLIPBOARD_IMAGE_STORE_ROOT" \
   /run/mysqld \
   "$MYSQL_DATA_DIR"
 

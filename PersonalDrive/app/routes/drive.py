@@ -1,8 +1,9 @@
-from flask import Blueprint, request, jsonify, Response, current_app, stream_with_context
+from flask import Blueprint, request, jsonify, Response, current_app, stream_with_context, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import timezone
 import mimetypes
 import os
+import shutil
 import time
 from urllib.parse import quote
 from app.services.file_service import FileService
@@ -10,6 +11,9 @@ from app.services.storage_service import StorageService
 from app.models import File
 
 bp = Blueprint('drive', __name__, url_prefix='/api/drive')
+
+# 支持生成缩略图的图片扩展名（Pillow 原生支持的格式）
+IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif'}
 
 
 def iter_limited_file(file_path, bytes_per_second, chunk_size=64 * 1024):
@@ -204,6 +208,75 @@ def download_file(file_id):
         direct_passthrough=True,
     )
 
+
+def generate_thumbnail(src_path, cache_path, max_px):
+    """生成 JPEG 缩略图：EXIF 方向校正，透明背景铺白"""
+    from PIL import Image, ImageOps
+
+    with Image.open(src_path) as img:
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((max_px, max_px))
+
+        has_alpha = img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)
+        if has_alpha:
+            rgba = img.convert('RGBA')
+            canvas = Image.new('RGB', rgba.size, (255, 255, 255))
+            canvas.paste(rgba, mask=rgba.split()[-1])
+            canvas.save(cache_path, 'JPEG', quality=85)
+        else:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.save(cache_path, 'JPEG', quality=85)
+
+
+def remove_thumbnail_cache(file_ids):
+    """删除文件时清理其缩略图缓存（尽力而为，不影响主流程）"""
+    cache_root = current_app.config.get('THUMB_CACHE_ROOT')
+    if not cache_root:
+        return
+    for file_id in file_ids:
+        shutil.rmtree(os.path.join(cache_root, str(file_id)), ignore_errors=True)
+
+
+@bp.route('/thumb/<int:file_id>', methods=['GET'])
+@jwt_required()
+def thumb_file(file_id):
+    username = get_jwt_identity()
+    file_record = FileService.get_file(file_id, username)
+    if not file_record or file_record.is_dir:
+        return jsonify({'msg': 'File not found'}), 404
+
+    ext = os.path.splitext(file_record.name or '')[1].lower()
+    if ext not in IMAGE_EXTS:
+        return jsonify({'msg': 'Not a supported image'}), 404
+
+    if not file_record.path or not os.path.isfile(file_record.path):
+        return jsonify({'msg': 'File not found'}), 404
+
+    # 缩略图边长限制在 16~512，避免恶意请求撑爆缓存
+    max_px = max(16, min(512, request.args.get('w', 128, type=int)))
+
+    # 缓存键带源文件 mtime：文件内容按 id 不可变，但数据库重建后 id 可能复用，
+    # mtime 参与键名可避免把旧文件的缩略图发给同名同 id 的新文件
+    cache_dir = os.path.join(current_app.config['THUMB_CACHE_ROOT'], str(file_id))
+    os.makedirs(cache_dir, exist_ok=True)
+    src_mtime = int(os.path.getmtime(file_record.path))
+    cache_path = os.path.join(cache_dir, f'{max_px}_{src_mtime}.jpg')
+
+    if not os.path.isfile(cache_path):
+        tmp_path = cache_path + '.tmp'
+        try:
+            generate_thumbnail(file_record.path, tmp_path, max_px)
+            os.replace(tmp_path, cache_path)
+        except Exception:
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+            return jsonify({'msg': 'Thumbnail generation failed'}), 404
+
+    response = send_file(cache_path, mimetype='image/jpeg', conditional=True)
+    response.headers['Cache-Control'] = 'private, max-age=86400'
+    return response
+
 @bp.route('/list', methods=['GET'])
 @jwt_required()
 def list_files():
@@ -251,6 +324,9 @@ def clear_drive():
     if not success:
         return jsonify({'msg': result}), 500
 
+    # 清空网盘时整体重建缩略图缓存目录（缓存按 id+mtime 键，重建成本低）
+    shutil.rmtree(current_app.config.get('THUMB_CACHE_ROOT', ''), ignore_errors=True)
+
     return jsonify({'msg': 'ok', 'deleted_count': result})
 
 
@@ -266,9 +342,18 @@ def delete_file(file_id):
 
     # 如果是目录，可能需要递归删除子文件
     if file_record.is_dir:
+        # 先收集自身及全部后代 id，删除成功后清理对应缩略图缓存
+        related_ids = [file_record.id]
+        frontier = [file_record.id]
+        while frontier:
+            rows = File.query.filter(File.parent_id.in_(frontier)).all()
+            frontier = [row.id for row in rows]
+            related_ids.extend(frontier)
+
         success, msg = FileService.delete_directory(file_record)
         if not success:
             return jsonify({'msg': msg}), 400
+        remove_thumbnail_cache(related_ids)
     else:
         try:
             # 删除实际文件
@@ -278,6 +363,8 @@ def delete_file(file_id):
             FileService.delete_file_record(file_record)
         except Exception as e:
             return jsonify({'msg': f'Deletion failed: {str(e)}'}), 500
+
+        remove_thumbnail_cache([file_id])
 
     return jsonify({'msg': 'ok'})
 

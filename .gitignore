@@ -21,6 +21,7 @@ FIleHistory/uploads/
 SharedFile/uploads/
 UserInfo/avatars/
 PersonalDrive/app/storage/
+ClipboardSync/image_store/
 
 SharedCSV/build/
 .agents

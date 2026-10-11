@@ -1,60 +1,21 @@
 import hashlib
-import json
 import queue
-import threading
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app import db
-from app.models import CloudClipboardItem
+from app.models import CloudClipboardItem, CloudClipboardImage
+from app.realtime import (
+    broadcast_clipboard_changed,
+    sse_event,
+    subscribe,
+    unsubscribe,
+)
+from app.routes.images import delete_image_files
 
 
 clipboard_bp = Blueprint('clipboard', __name__)
-_subscriber_lock = threading.Lock()
-_subscribers = {}
-
-
-def _subscribe(username):
-    subscriber = queue.Queue(maxsize=10)
-    with _subscriber_lock:
-        _subscribers.setdefault(username, set()).add(subscriber)
-    return subscriber
-
-
-def _unsubscribe(username, subscriber):
-    with _subscriber_lock:
-        subscribers = _subscribers.get(username)
-        if not subscribers:
-            return
-        subscribers.discard(subscriber)
-        if not subscribers:
-            _subscribers.pop(username, None)
-
-
-def _broadcast_clipboard_changed(username, action):
-    payload = {
-        'action': action,
-    }
-    with _subscriber_lock:
-        subscribers = list(_subscribers.get(username, set()))
-
-    for subscriber in subscribers:
-        try:
-            subscriber.put_nowait(payload)
-        except queue.Full:
-            try:
-                subscriber.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                subscriber.put_nowait(payload)
-            except queue.Full:
-                pass
-
-
-def _sse_event(event_name, payload):
-    return f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @clipboard_bp.route('/clipboard/items', methods=['GET'])
@@ -86,12 +47,21 @@ def clear_items():
     deleted_count = (CloudClipboardItem.query
                      .filter_by(username=username)
                      .delete(synchronize_session=False))
+
+    images = CloudClipboardImage.query.filter_by(username=username).all()
+    deleted_image_count = 0
+    for image in images:
+        if delete_image_files(image):
+            deleted_image_count += 1
+        db.session.delete(image)
+
     db.session.commit()
-    _broadcast_clipboard_changed(username, 'cleared')
+    broadcast_clipboard_changed(username, 'cleared')
 
     return jsonify({
         'message': 'cleared',
         'deleted_count': deleted_count,
+        'deleted_image_count': deleted_image_count,
     }), 200
 
 
@@ -99,20 +69,20 @@ def clear_items():
 @jwt_required()
 def clipboard_events():
     username = get_jwt_identity()
-    subscriber = _subscribe(username)
+    subscriber = subscribe(username)
 
     @stream_with_context
     def event_stream():
         try:
-            yield _sse_event('connected', {'message': 'ok'})
+            yield sse_event('connected', {'message': 'ok'})
             while True:
                 try:
                     payload = subscriber.get(timeout=25)
-                    yield _sse_event('clipboard_changed', payload)
+                    yield sse_event('clipboard_changed', payload)
                 except queue.Empty:
                     yield ': ping\n\n'
         finally:
-            _unsubscribe(username, subscriber)
+            unsubscribe(username, subscriber)
 
     return Response(event_stream(), mimetype='text/event-stream')
 
@@ -146,7 +116,7 @@ def create_item():
                 .order_by(CloudClipboardItem.id.desc())
                 .first())
     if existing and existing.content == content:
-        _broadcast_clipboard_changed(username, 'already_synced')
+        broadcast_clipboard_changed(username, 'already_synced')
         return jsonify({
             'message': 'already synced',
             'id': existing.id,
@@ -159,7 +129,7 @@ def create_item():
     )
     db.session.add(item)
     db.session.commit()
-    _broadcast_clipboard_changed(username, 'created')
+    broadcast_clipboard_changed(username, 'created')
 
     return jsonify({
         'message': 'ok',
@@ -178,5 +148,5 @@ def delete_item(item_id):
 
     db.session.delete(item)
     db.session.commit()
-    _broadcast_clipboard_changed(username, 'deleted')
+    broadcast_clipboard_changed(username, 'deleted')
     return jsonify({'message': 'deleted'}), 200

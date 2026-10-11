@@ -22,6 +22,7 @@ UniFileHub Server 是 UniFileHub 的后端服务仓库，用于提供云端 API�
 | FIleHistory | 5002 | 文件历史与备份记录服务 |
 | PersonalDrive | 5005 | 个人网盘、文件上传下载、目录与文件管理服务 |
 | ClipboardSync | 5006 | 剪贴板历史与云端同步服务 |
+| Discovery | UDP 15000 | 局域网服务发现与服务器 IP 广播 |
 | MariaDB / MySQL | 3306 | 后端数据库，兼容 MySQL 协议 |
 
 Docker 容器启动时会自动初始化数据库、创建必要的数据表，并启动所有后端服务。
@@ -62,7 +63,7 @@ UniFileHub-Server/
 - 创建默认数据库和应用用户
 - 初始化 UserInfo、PersonalDrive、ClipboardSync 数据表
 - 启动 Nginx
-- 启动 SharedFile、UserInfo、FIleHistory、PersonalDrive、ClipboardSync 服务
+- 启动 SharedFile、UserInfo、FIleHistory、PersonalDrive、ClipboardSync、Discovery 服务
 
 ### Ubuntu 本地启动
 
@@ -162,7 +163,9 @@ sudo docker run -d \
   -p 5002:5002 \
   -p 5005:5005 \
   -p 5006:5006 \
+  -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
+  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   unifilehubserver:v2.0
 ```
 
@@ -178,6 +181,7 @@ sudo docker run -d \
 | `5002:5002` | FIleHistory 服务端口 |
 | `5005:5005` | PersonalDrive 服务端口 |
 | `5006:5006` | ClipboardSync 服务端口 |
+| `15000:15000/udp` | Discovery 局域网服务发现端口 |
 
 数据卷说明：
 
@@ -200,7 +204,9 @@ sudo docker run -d \
   -p 5002:5002 \
   -p 5005:5005 \
   -p 5006:5006 \
+  -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
+  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   -e MYSQL_ROOT_PASSWORD=Mysql20039248 \
   -e MYSQL_DATABASE=SmartDesk \
   -e MYSQL_APP_USER=smartdesk \
@@ -259,7 +265,9 @@ sudo docker run -d \
   -p 5002:5002 \
   -p 5005:5005 \
   -p 5006:5006 \
+  -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
+  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   unifilehubserver:v2.0
 ```
 
@@ -278,6 +286,7 @@ Docker 启动脚本支持以下环境变量：
 | `DATABASE_URL` | 自动生成 | 后端数据库连接地址 |
 | `SECRET_KEY` | `dev-secret` | Flask 应用密钥 |
 | `JWT_SECRET_KEY` | `jwt-secret-key` | JWT 签名密钥 |
+| `UNIFILEHUB_LAN_IP` | 自动探测 | Discovery 应答给客户端的服务器局域网 IP，Docker 部署时建议显式设置为宿主机 LAN IP |
 | `SHAREDCSV_RESOURCE_DIR` | `/app/SharedCSV/resources` | SharedCSV 资源目录 |
 | `STORAGE_ROOT` | `/app/PersonalDrive/app/storage` | 个人网盘文件存储目录 |
 
