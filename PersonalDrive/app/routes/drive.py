@@ -420,3 +420,29 @@ def rename_item():
         return jsonify({'msg': 'Rename failed', 'error': str(e)}), 500
 
 
+@bp.route('/move', methods=['POST'])
+@jwt_required()
+def move_item():
+    username = get_jwt_identity()
+    data = request.get_json()
+
+    item_id = data.get('item_id')
+    new_parent_id = data.get('new_parent_id')
+
+    if item_id is None or new_parent_id is None:
+        return jsonify({'msg': 'Missing required parameters'}), 400
+
+    success, result = FileService.move_item(int(item_id), username, int(new_parent_id))
+    if not success:
+        return jsonify({'msg': result}), 400
+
+    return jsonify({
+        "id": result.id,
+        "name": result.name,
+        "is_dir": result.is_dir,
+        "size": result.size,
+        "parent_id": result.parent_id,
+        "created_at": utc_isoformat(result.created_at)
+    }), 200
+
+

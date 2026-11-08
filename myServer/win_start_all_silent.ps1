@@ -16,75 +16,144 @@ $Services = @(
     @{ Name = "Discovery";     Dir = "Discovery";     Script = "app.py"; Port = 15000; Protocol = "UDP" }
 )
 
-function Wait-TcpPort($HostName, $Port, $TimeoutSeconds) {
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        $client = New-Object System.Net.Sockets.TcpClient
-        try {
-            $async = $client.BeginConnect($HostName, $Port, $null, $null)
-            if ($async.AsyncWaitHandle.WaitOne(1000)) {
-                $client.EndConnect($async)
-                return $true
-            }
-        } catch {
-        } finally {
-            $client.Close()
-        }
-
-        Start-Sleep -Seconds 1
-    }
-
-    return $false
-}
-
-function Wait-UdpPort($Port, $TimeoutSeconds) {
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        $endpoint = Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($endpoint) {
+function Test-TcpPort($HostName, $Port, $TimeoutMs) {
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $client.BeginConnect($HostName, $Port, $null, $null)
+        if ($async.AsyncWaitHandle.WaitOne($TimeoutMs)) {
+            $client.EndConnect($async)
             return $true
         }
 
-        Start-Sleep -Seconds 1
+        return $false
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
     }
-
-    return $false
 }
 
-function Start-MysqlService {
-    Write-Host ("Starting MySQL service {0}..." -f $MysqlService)
+function Get-MysqlService {
     $service = Get-Service -Name $MysqlService -ErrorAction SilentlyContinue
     if (-not $service) {
         throw "MySQL service '$MysqlService' was not found. Set UNIFILEHUB_MYSQL_SERVICE if your service name is different."
     }
 
-    if ($service.Status -ne "Running") {
-        try {
-            Start-Service -Name $MysqlService
-        } catch {
-            Write-Host "Start-Service failed, trying net start..."
-            & net start $MysqlService | Out-Host
+    $startType = $null
+    try { $startType = $service.StartType } catch { }
+    if ($startType -eq "Disabled") {
+        throw "MySQL service '$MysqlService' is disabled. Run: Set-Service '$MysqlService' -StartupType Manual"
+    }
+
+    return $service
+}
+
+function Wait-ServiceStopped($Service, $TimeoutSeconds) {
+    try {
+        $Service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds($TimeoutSeconds))
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Issues the start request without blocking, so the cleanup pass below overlaps with MySQL booting.
+function Start-MysqlKickoff($Service) {
+    if ($Service.Status -in @("Running", "StartPending")) {
+        return $Service
+    }
+
+    if ($Service.Status -eq "StopPending") {
+        Write-Host "MySQL service is still stopping; waiting up to 60 seconds for it to settle..."
+        if (-not (Wait-ServiceStopped $Service 60)) {
+            Write-Host "MySQL is stuck stopping, sending a stop request..."
+            try {
+                $Service.Stop()
+            } catch {
+                Write-Host ("MySQL stop request failed: {0}" -f $_.Exception.Message)
+            }
+
+            if (-not (Wait-ServiceStopped $Service 15)) {
+                Write-Host "Warning: MySQL did not stop cleanly, force-killing mysqld.exe..."
+                & taskkill.exe /IM mysqld.exe /T /F *>$null
+                Start-Sleep -Seconds 3
+            }
+        }
+
+        $Service.Refresh()
+    }
+
+    Write-Host ("Requesting start of MySQL service {0}..." -f $MysqlService)
+    try {
+        $Service.Start()
+    } catch {
+        Write-Host ("MySQL start request failed (will be retried): {0}" -f $_.Exception.Message)
+    }
+
+    return $Service
+}
+
+function Wait-MysqlReady($Service) {
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if ($attempt -gt 1) {
+            Write-Host ("Retrying MySQL start (attempt {0} of 2)..." -f $attempt)
+            try {
+                $Service.Start()
+            } catch {
+                Write-Host ("MySQL start request failed: {0}" -f $_.Exception.Message)
+            }
+        }
+
+        if ($Service.Status -ne "Running") {
+            try {
+                $Service.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
+            } catch {
+                $Service.Refresh()
+                Write-Host ("MySQL did not reach Running within 60 seconds (status: {0})." -f $Service.Status)
+                continue
+            }
+        }
+
+        # Wait for TCP readiness, watching for mysqld crashing back to Stopped.
+        $crashed = $false
+        $deadline = (Get-Date).AddSeconds(90)
+        while ((Get-Date) -lt $deadline) {
+            $Service.Refresh()
+            if ($Service.Status -eq "Stopped") {
+                Write-Host "MySQL exited while starting (mysqld crashed?)."
+                $crashed = $true
+                break
+            }
+
+            if (Test-TcpPort $MysqlHost $MysqlPort 400) {
+                Write-Host "MySQL is ready."
+                return
+            }
+
+            Start-Sleep -Milliseconds 500
+        }
+
+        # Service is running but the port never opened; retrying will not help.
+        if (-not $crashed) {
+            break
         }
     }
 
-    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
-
-    if (-not (Wait-TcpPort $MysqlHost $MysqlPort 60)) {
-        throw "MySQL service is running, but TCP $MysqlHost`:$MysqlPort is not ready."
+    $Service.Refresh()
+    $portHint = ""
+    $listener = Get-NetTCPConnection -LocalPort $MysqlPort -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($listener) {
+        $owner = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+        if ($owner) {
+            $portHint = (" Port {0} is currently held by PID {1} ({2})." -f $MysqlPort, $owner.Id, $owner.ProcessName)
+        }
     }
 
-    Write-Host "MySQL is ready."
+    throw ("MySQL on {0}:{1} did not become ready (service status: {2}).{3} Check the MySQL error log and Windows Event Viewer." -f $MysqlHost, $MysqlPort, $Service.Status, $portHint)
 }
 
-function Start-PythonService($Service) {
-    $workDir = Join-Path $RootDir $Service.Dir
-    $scriptPath = Join-Path $workDir $Service.Script
-    if (-not (Test-Path $scriptPath)) {
-        Write-Host ("Skipping {0}: script not found: {1}" -f $Service.Name, $scriptPath)
-        return
-    }
-
+function Resolve-PythonExe {
     $python = Get-Command python.exe -ErrorAction SilentlyContinue
     if (-not $python) {
         $python = Get-Command python -ErrorAction SilentlyContinue
@@ -93,31 +162,83 @@ function Start-PythonService($Service) {
         throw "python.exe was not found in PATH."
     }
 
-    $stdout = Join-Path $LogDir ($Service.Name + ".out.log")
-    $stderr = Join-Path $LogDir ($Service.Name + ".err.log")
+    return $python.Source
+}
 
-    $protocol = if ($Service.Protocol) { $Service.Protocol } else { "TCP" }
+# Launches every service first, then polls all ports together, so one slow
+# service no longer delays the startup of the others.
+function Start-PythonServices($PythonExe) {
+    $launched = @()
+    foreach ($service in $Services) {
+        $workDir = Join-Path $RootDir $service.Dir
+        $scriptPath = Join-Path $workDir $service.Script
+        if (-not (Test-Path $scriptPath)) {
+            Write-Host ("Skipping {0}: script not found: {1}" -f $service.Name, $scriptPath)
+            continue
+        }
 
-    Write-Host ("Starting {0} on {1} port {2}..." -f $Service.Name, $protocol, $Service.Port)
-    $process = Start-Process `
-        -FilePath $python.Source `
-        -ArgumentList @($scriptPath) `
-        -WorkingDirectory $workDir `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $stdout `
-        -RedirectStandardError $stderr `
-        -PassThru
+        $stdout = Join-Path $LogDir ($service.Name + ".out.log")
+        $stderr = Join-Path $LogDir ($service.Name + ".err.log")
+        $protocol = if ($service.Protocol) { $service.Protocol } else { "TCP" }
 
-    $isListening = if ($protocol -eq "UDP") {
-        Wait-UdpPort $Service.Port 25
-    } else {
-        Wait-TcpPort "127.0.0.1" $Service.Port 25
+        Write-Host ("Starting {0} on {1} port {2}..." -f $service.Name, $protocol, $service.Port)
+        try {
+            $process = Start-Process `
+                -FilePath $PythonExe `
+                -ArgumentList @($scriptPath) `
+                -WorkingDirectory $workDir `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $stdout `
+                -RedirectStandardError $stderr `
+                -PassThru
+        } catch {
+            Write-Host ("Failed to launch {0}: {1}" -f $service.Name, $_.Exception.Message)
+            continue
+        }
+
+        $launched += [pscustomobject]@{
+            Name = $service.Name
+            Protocol = $protocol
+            Port = $service.Port
+            ProcessId = $process.Id
+            Stdout = $stdout
+            Stderr = $stderr
+        }
     }
 
-    if (-not $isListening) {
-        Write-Host ("Warning: {0} did not open {1} port {2} within 25 seconds. Check {3} and {4}." -f $Service.Name, $protocol, $Service.Port, $stdout, $stderr)
-    } else {
-        Write-Host ("{0} is listening on {1} port {2}. PID: {3}" -f $Service.Name, $protocol, $Service.Port, $process.Id)
+    $pending = @($launched)
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
+        $remaining = @()
+        foreach ($item in $pending) {
+            if ($item.Protocol -eq "UDP") {
+                $isListening = [bool](Get-NetUDPEndpoint -LocalPort $item.Port -ErrorAction SilentlyContinue |
+                    Select-Object -First 1)
+            } else {
+                $isListening = Test-TcpPort "127.0.0.1" $item.Port 400
+            }
+
+            if ($isListening) {
+                Write-Host ("{0} is listening on {1} port {2}. PID: {3}" -f $item.Name, $item.Protocol, $item.Port, $item.ProcessId)
+                continue
+            }
+
+            if (-not (Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue)) {
+                Write-Host ("Warning: {0} (PID {1}) exited without opening port {2}. Check {3} and {4}." -f $item.Name, $item.ProcessId, $item.Port, $item.Stdout, $item.Stderr)
+                continue
+            }
+
+            $remaining += $item
+        }
+
+        $pending = $remaining
+        if ($pending.Count -gt 0) {
+            Start-Sleep -Milliseconds 400
+        }
+    }
+
+    foreach ($item in $pending) {
+        Write-Host ("Warning: {0} did not open {1} port {2} within 30 seconds. Check {3} and {4}." -f $item.Name, $item.Protocol, $item.Port, $item.Stdout, $item.Stderr)
     }
 }
 
@@ -132,7 +253,9 @@ function Start-UniFileHubClient {
     }
 
     $clientFullPath = (Resolve-Path $ClientExe).Path
-    $existing = Get-CimInstance Win32_Process |
+    $clientName = [System.IO.Path]::GetFileName($clientFullPath)
+
+    $existing = Get-CimInstance Win32_Process -Filter ("Name='{0}'" -f $clientName.Replace("'", "''")) -ErrorAction SilentlyContinue |
         Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $clientFullPath } |
         Select-Object -First 1
 
@@ -147,15 +270,18 @@ function Start-UniFileHubClient {
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+$mysqlService = Get-MysqlService
+$mysqlService = Start-MysqlKickoff $mysqlService
+
 Write-Host "Cleaning stale UniFileHub services..."
 & (Join-Path $PSScriptRoot "win_stop_all_silent.ps1") -SkipMysql -Quiet
 
-Start-MysqlService
+Wait-MysqlReady $mysqlService
+
+$pythonExe = Resolve-PythonExe
 
 Write-Host "Starting Python services..."
-foreach ($service in $Services) {
-    Start-PythonService $service
-}
+Start-PythonServices $pythonExe
 
 Start-UniFileHubClient
 

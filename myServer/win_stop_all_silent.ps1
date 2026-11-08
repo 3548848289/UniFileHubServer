@@ -1,6 +1,7 @@
 param(
     [switch]$SkipMysql,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [int]$MaxRounds = 5
 )
 
 $ErrorActionPreference = "Continue"
@@ -38,61 +39,88 @@ function Stop-Pid($ProcessId, $Reason) {
     }
 }
 
-function Get-ProcessInfo($ProcessId) {
+# One snapshot per round, shared by script matching and port-owner lookups
+# (the old version re-enumerated all processes once per script pattern).
+$script:ProcessCache = @{}
+$script:ListenersByPort = @{}
+$script:UdpByPort = @{}
+
+function Update-RoundSnapshot {
+    $script:ProcessCache = @{}
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
+        $script:ProcessCache[[int]$_.ProcessId] = $_
+    }
+
+    $script:ListenersByPort = @{}
+    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($Ports -contains $_.LocalPort) {
+            if (-not $script:ListenersByPort.ContainsKey($_.LocalPort)) {
+                $script:ListenersByPort[$_.LocalPort] = @()
+            }
+            $script:ListenersByPort[$_.LocalPort] += $_
+        }
+    }
+
+    $script:UdpByPort = @{}
+    Get-NetUDPEndpoint -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($UdpPorts -contains $_.LocalPort) {
+            if (-not $script:UdpByPort.ContainsKey($_.LocalPort)) {
+                $script:UdpByPort[$_.LocalPort] = @()
+            }
+            $script:UdpByPort[$_.LocalPort] += $_
+        }
+    }
+}
+
+function Get-CachedProcess($ProcessId) {
     if (-not $ProcessId) {
         return $null
     }
 
-    Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $ProcessId) -ErrorAction SilentlyContinue
-}
-
-function Stop-PortOwner($Port) {
-    $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    foreach ($connection in $connections) {
-        $owner = Get-ProcessInfo $connection.OwningProcess
-        if (-not $owner) {
-            Stop-Pid $connection.OwningProcess ("listening on port {0}" -f $Port)
-            continue
-        }
-
-        $parent = Get-ProcessInfo $owner.ParentProcessId
-        $parentName = if ($parent) { [System.IO.Path]::GetFileNameWithoutExtension($parent.Name) } else { "" }
-        if ($parent -and $parentName -in @("python", "pythonw", "py")) {
-            Stop-Pid $parent.ProcessId ("parent of process listening on port {0}" -f $Port)
-        } else {
-            Stop-Pid $owner.ProcessId ("listening on port {0}" -f $Port)
-        }
+    $processId = [int]$ProcessId
+    if ($script:ProcessCache.ContainsKey($processId)) {
+        return $script:ProcessCache[$processId]
     }
+
+    return Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $processId) -ErrorAction SilentlyContinue
 }
 
-function Stop-MatchedServiceScripts {
+function Invoke-StopRound {
+    $stoppedCount = 0
+
     foreach ($scriptPath in $ServiceScripts) {
         $scriptName = Split-Path $scriptPath -Leaf
         $scriptPathPattern = "*" + $scriptPath + "*"
+        $scriptDirPattern = "*UniFileHub-Server*" + $scriptName + "*"
 
-        $matches = Get-CimInstance Win32_Process |
-            Where-Object {
-                $_.CommandLine -and
-                (
-                    $_.CommandLine -like $scriptPathPattern -or
-                    $_.CommandLine -like ("*UniFileHub-Server*" + $scriptName + "*")
-                )
+        foreach ($candidate in $script:ProcessCache.Values) {
+            if ($candidate.CommandLine -and
+                ($candidate.CommandLine -like $scriptPathPattern -or $candidate.CommandLine -like $scriptDirPattern)) {
+                Stop-Pid $candidate.ProcessId ("matched command line for {0}" -f $scriptPath)
+                $stoppedCount++
             }
-
-        foreach ($match in $matches) {
-            Stop-Pid $match.ProcessId ("matched command line for {0}" -f $scriptPath)
         }
     }
-}
-
-Write-Status "Stopping UniFileHub Python services..."
-
-for ($round = 1; $round -le 5; $round++) {
-    Stop-MatchedServiceScripts
 
     foreach ($port in $Ports) {
         try {
-            Stop-PortOwner $port
+            foreach ($connection in $script:ListenersByPort[$port]) {
+                $owner = Get-CachedProcess $connection.OwningProcess
+                if (-not $owner) {
+                    Stop-Pid $connection.OwningProcess ("listening on port {0}" -f $port)
+                    $stoppedCount++
+                    continue
+                }
+
+                $parent = Get-CachedProcess $owner.ParentProcessId
+                $parentName = if ($parent) { [System.IO.Path]::GetFileNameWithoutExtension($parent.Name) } else { "" }
+                if ($parent -and $parentName -in @("python", "pythonw", "py")) {
+                    Stop-Pid $parent.ProcessId ("parent of process listening on port {0}" -f $port)
+                } else {
+                    Stop-Pid $owner.ProcessId ("listening on port {0}" -f $port)
+                }
+                $stoppedCount++
+            }
         } catch {
             Write-Status ("Unable to inspect port {0}: {1}" -f $port, $_.Exception.Message)
         }
@@ -100,25 +128,37 @@ for ($round = 1; $round -le 5; $round++) {
 
     foreach ($port in $UdpPorts) {
         try {
-            $udpConnections = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue
-            foreach ($udpConnection in $udpConnections) {
+            foreach ($udpConnection in $script:UdpByPort[$port]) {
                 Stop-Pid $udpConnection.OwningProcess ("listening on UDP port {0}" -f $port)
+                $stoppedCount++
             }
         } catch {
             Write-Status ("Unable to inspect UDP port {0}: {1}" -f $port, $_.Exception.Message)
         }
     }
 
-    Start-Sleep -Milliseconds 600
+    return $stoppedCount
 }
 
-Start-Sleep -Milliseconds 800
+Write-Status "Stopping UniFileHub Python services..."
+
+for ($round = 1; $round -le $MaxRounds; $round++) {
+    Update-RoundSnapshot
+    $stoppedCount = Invoke-StopRound
+
+    if ($stoppedCount -eq 0) {
+        break
+    }
+
+    Start-Sleep -Milliseconds 300
+}
+
+Start-Sleep -Milliseconds 500
 
 $stillListening = @()
-foreach ($port in $Ports) {
-    $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    if ($connections) {
-        $stillListening += $port
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($Ports -contains $_.LocalPort -and $stillListening -notcontains $_.LocalPort) {
+        $stillListening += $_.LocalPort
     }
 }
 

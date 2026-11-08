@@ -28,3 +28,4 @@ SharedCSV/build/
 *.sqlite3
 *.db
 *.tar
+/PersonalDrive/thumb_cache

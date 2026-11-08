@@ -167,6 +167,21 @@ class FileService:
             return False, str(e)
 
     @staticmethod
+    def _shift_descendant_paths(dir_record, old_path, new_path):
+        """目录物理位置/名称变化后，同步修正其所有后代记录的 path 前缀"""
+        old_prefix = old_path.rstrip(os.sep) + os.sep
+        new_prefix = new_path.rstrip(os.sep) + os.sep
+        frontier = [dir_record.id]
+        while frontier:
+            children = File.query.filter(File.parent_id.in_(frontier)).all()
+            frontier = []
+            for child in children:
+                if child.path and child.path.startswith(old_prefix):
+                    child.path = new_prefix + child.path[len(old_prefix):]
+                if child.is_dir:
+                    frontier.append(child.id)
+
+    @staticmethod
     def rename_item(file_id, username, new_name):
         try:
             new_name = StorageService.sanitize_name(new_name)
@@ -177,19 +192,92 @@ class FileService:
 
             # 获取父目录路径
             parent_path = StorageService.get_parent_path(username, file_record.parent_id)
-            
+
             # 构建新的文件/目录路径
             new_path = StorageService.ensure_child_path(parent_path, os.path.join(parent_path, new_name))
-            
+
+            old_path = file_record.path
+
             # 重命名物理文件/目录
             if os.path.exists(file_record.path):
                 os.rename(file_record.path, new_path)
-            
+
             # 更新数据库记录
             file_record.name = new_name
             file_record.path = new_path
+            # 文件夹重命名后，磁盘上后代位置已随目录变化，需同步修正后代记录的 path
+            if file_record.is_dir:
+                FileService._shift_descendant_paths(file_record, old_path, new_path)
             db.session.commit()
-            
+
+            return True, file_record
+        except Exception as e:
+            db.session.rollback()
+            return False, str(e)
+
+    @staticmethod
+    def move_item(file_id, username, new_parent_id):
+        try:
+            file_record = FileService.get_file(file_id, username)
+            if not file_record:
+                return False, "File not found"
+
+            if file_record.is_dir and file_record.id == new_parent_id:
+                return False, "不能移动到自身"
+
+            if file_record.parent_id == new_parent_id:
+                return False, "文件已在该目录中"
+
+            # 目标必须是当前用户存在的目录（0 表示根目录）
+            if new_parent_id == 0:
+                target_path = StorageService.get_user_root(username)
+            else:
+                parent = File.query.filter_by(
+                    id=new_parent_id,
+                    username=username,
+                    is_dir=True
+                ).first()
+                if not parent:
+                    return False, "目标目录不存在"
+                target_path = parent.path
+
+            # 文件夹不能移入自己的子目录
+            if file_record.is_dir:
+                frontier = [file_record.id]
+                while frontier:
+                    rows = File.query.filter(File.parent_id.in_(frontier)).all()
+                    if any(row.id == new_parent_id for row in rows):
+                        return False, "不能移动到自身的子目录中"
+                    frontier = [row.id for row in rows]
+
+            # 目标目录中不能有同名项（数据库与磁盘双重校验，磁盘校验可覆盖大小写差异）
+            conflict = File.query.filter_by(
+                username=username,
+                parent_id=new_parent_id,
+                name=file_record.name
+            ).first()
+            if conflict:
+                return False, "目标目录已存在同名文件或文件夹"
+
+            new_path = StorageService.ensure_child_path(
+                target_path,
+                os.path.join(target_path, file_record.name)
+            )
+            if os.path.exists(new_path):
+                return False, "目标目录已存在同名文件或文件夹"
+
+            old_path = file_record.path
+            os.makedirs(target_path, exist_ok=True)
+            if old_path and os.path.exists(old_path):
+                shutil.move(old_path, new_path)
+
+            file_record.parent_id = new_parent_id
+            file_record.path = new_path
+            # 移动文件夹时，后代的物理位置都随目录变化，同步修正后代记录的 path
+            if file_record.is_dir:
+                FileService._shift_descendant_paths(file_record, old_path, new_path)
+            db.session.commit()
+
             return True, file_record
         except Exception as e:
             db.session.rollback()

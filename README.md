@@ -150,13 +150,14 @@ docker images
 
 ### 直接运行
 
-修正后的 Docker 运行命令如下：
+必须使用 `--network host`（容器共享宿主机网络栈）：Discovery 的服务发现依赖客户端发来的 UDP 广播，bridge 网络 + `-p` 端口映射无法转发广播包，客户端将扫描不到服务器。host 模式下各服务直接监听在宿主机的同名端口上，`-p` 映射会被 Docker 忽略，保留在命令里不影响运行。
 
 ```bash
 sudo docker run -d \
   --name unifilehub \
+  --network host \
   -p 80:80 \
-  -p 8080:80 \
+  -p 8080:8080 \
   -p 3306:3306 \
   -p 5000:5000 \
   -p 5001:5001 \
@@ -165,29 +166,32 @@ sudo docker run -d \
   -p 5006:5006 \
   -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
-  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   unifilehubserver:v2.0
 ```
 
-端口说明：
+端口说明（host 模式下直接监听在宿主机上，与映射一一对应；nginx 同时监听 80 与 8080）：
 
-| 映射 | 说明 |
+| 端口 | 说明 |
 | --- | --- |
-| `80:80` | 通过服务器 80 端口访问 Web 服务 |
-| `8080:80` | 通过服务器 8080 端口访问同一个 Web 服务，可按需删除 |
-| `3306:3306` | MariaDB / MySQL 数据库端口 |
-| `5000:5000` | SharedFile 服务端口 |
-| `5001:5001` | UserInfo 服务端口 |
-| `5002:5002` | FIleHistory 服务端口 |
-| `5005:5005` | PersonalDrive 服务端口 |
-| `5006:5006` | ClipboardSync 服务端口 |
-| `15000:15000/udp` | Discovery 局域网服务发现端口 |
+| 80 | Web 服务 |
+| 8080 | Web 服务（与 80 同一站点） |
+| 3306 | MariaDB / MySQL 数据库端口 |
+| 5000 | SharedFile 服务端口 |
+| 5001 | UserInfo 服务端口 |
+| 5002 | FIleHistory 服务端口 |
+| 5005 | PersonalDrive 服务端口 |
+| 5006 | ClipboardSync 服务端口 |
+| 15000/udp | Discovery 局域网服务发现端口 |
 
 数据卷说明：
 
 | 数据卷 | 容器路径 | 说明 |
 | --- | --- | --- |
 | `unifilehub_mysql` | `/var/lib/mysql` | 持久化数据库数据 |
+
+### 服务发现与 IP 自适应
+
+Discovery 收到客户端广播后，会按"来问的客户端"实时反查本机路由源 IP 并单播应答，客户端验证可达后自动写入各服务地址。因此服务器换 IP、换网段、多网卡都不需要修改配置或重建容器。仅当需要强制固定应答某个 IP 时（极少见），才通过 `-e UNIFILEHUB_LAN_IP=<IP>` 手动覆盖。
 
 ### 使用环境变量运行
 
@@ -196,8 +200,9 @@ sudo docker run -d \
 ```bash
 sudo docker run -d \
   --name unifilehub \
+  --network host \
   -p 80:80 \
-  -p 8080:80 \
+  -p 8080:8080 \
   -p 3306:3306 \
   -p 5000:5000 \
   -p 5001:5001 \
@@ -206,7 +211,6 @@ sudo docker run -d \
   -p 5006:5006 \
   -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
-  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   -e MYSQL_ROOT_PASSWORD=Mysql20039248 \
   -e MYSQL_DATABASE=SmartDesk \
   -e MYSQL_APP_USER=smartdesk \
@@ -257,8 +261,9 @@ sudo docker stop unifilehub
 sudo docker rm unifilehub
 sudo docker run -d \
   --name unifilehub \
+  --network host \
   -p 80:80 \
-  -p 8080:80 \
+  -p 8080:8080 \
   -p 3306:3306 \
   -p 5000:5000 \
   -p 5001:5001 \
@@ -267,7 +272,6 @@ sudo docker run -d \
   -p 5006:5006 \
   -p 15000:15000/udp \
   -v unifilehub_mysql:/var/lib/mysql \
-  -e UNIFILEHUB_LAN_IP=192.168.1.20 \
   unifilehubserver:v2.0
 ```
 
@@ -286,7 +290,7 @@ Docker 启动脚本支持以下环境变量：
 | `DATABASE_URL` | 自动生成 | 后端数据库连接地址 |
 | `SECRET_KEY` | `dev-secret` | Flask 应用密钥 |
 | `JWT_SECRET_KEY` | `jwt-secret-key` | JWT 签名密钥 |
-| `UNIFILEHUB_LAN_IP` | 自动探测 | Discovery 应答给客户端的服务器局域网 IP，Docker 部署时建议显式设置为宿主机 LAN IP |
+| `UNIFILEHUB_LAN_IP` | （不设置） | 可选。默认 Discovery 按来问的客户端逐个反查路由源 IP，自动适配换 IP / 多网卡；仅当需要固定应答某个 IP 时设置 |
 | `SHAREDCSV_RESOURCE_DIR` | `/app/SharedCSV/resources` | SharedCSV 资源目录 |
 | `STORAGE_ROOT` | `/app/PersonalDrive/app/storage` | 个人网盘文件存储目录 |
 
@@ -303,7 +307,7 @@ http://服务器IP/
 http://服务器IP:8080/
 ```
 
-如果只需要一个 Web 访问端口，可以删除 `-p 8080:80`。
+两个端口由 nginx 同时监听，内容相同；如需增改端口，修改 `nginx/unifilehub.conf` 后重新构建镜像。
 
 ---
 
